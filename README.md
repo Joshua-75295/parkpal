@@ -8,6 +8,54 @@ ParkPal is a full-stack parking management and booking platform built for three 
 
 The project now goes well beyond a basic CRUD demo. It includes cookie-based auth with refresh tokens, role-aware routing, real-time updates, map intelligence, booking lifecycle automation, analytics, favorites, quick rebook, and local image upload for parking slots.
 
+## Quick Start
+
+From the project root:
+
+```powershell
+npm --prefix client install
+npm --prefix server install
+npm run dev
+```
+
+The server needs a `server/.env` file with at least:
+
+```env
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_long_random_secret
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+CLIENT_ORIGIN=http://localhost:5173
+```
+
+## Demo Data
+
+Seed a ready-to-test local database with:
+
+```powershell
+npm run seed:demo
+```
+
+That command creates:
+
+- 1 super admin
+- 10 mall admin accounts
+- 6 demo user accounts
+- 10 parking locations owned by the mall admins
+- demo bookings for today and recent days, so bookings, validation, analytics, and favorites are easy to test
+
+If you want to replace previously seeded demo bookings, run:
+
+```powershell
+npm run seed:demo:force
+```
+
+Demo credentials:
+
+- Super admin: `superadmin@parkpal.test` / `SuperAdmin@123`
+- Mall admins: use any seeded mall admin email / `Mall@123`
+- Demo users: use any seeded `@parkpal.test` email / `User@123`
+
 ## Current Feature Set
 
 ### User Features
@@ -54,7 +102,9 @@ The project now goes well beyond a basic CRUD demo. It includes cookie-based aut
 
 ## Recommended Local Credentials
 
-These are recommended local development accounts for testing. They are not auto-seeded. Create them manually through the UI or Postman.
+If you use `npm run seed:demo`, use the seeded demo accounts above.
+
+If you prefer to create accounts manually through the UI or Postman, these are good local development examples:
 
 | Role | Email | Password | Setup |
 | --- | --- | --- | --- |

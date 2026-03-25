@@ -7,7 +7,9 @@
     "server": "nodemon server.js",
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "seed:demo": "node scripts/seedDemoData.js",
+    "seed:demo:force": "node scripts/seedDemoData.js --force-bookings"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
