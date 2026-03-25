@@ -1,0 +1,215 @@
+import BookingForm from "./BookingForm.jsx";
+import {
+  formatDistanceAway,
+  resolveParkingImageUrl,
+} from "../services/parkingService.js";
+import { PARKING_SPOT_TYPE_LABELS } from "../utils/constants.js";
+
+const cardStyle = {
+  borderRadius: "24px",
+  border: "1px solid rgba(16, 42, 67, 0.08)",
+  background: "#ffffff",
+  padding: "22px",
+  boxShadow: "0 18px 40px rgba(16, 42, 67, 0.08)",
+  transition: "transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease",
+};
+
+const topRowStyle = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: "16px",
+  flexWrap: "wrap",
+};
+
+const mediaStyle = {
+  width: "100%",
+  height: "210px",
+  objectFit: "cover",
+  borderRadius: "18px",
+  marginBottom: "18px",
+  background:
+    "linear-gradient(135deg, rgba(20, 184, 166, 0.14), rgba(59, 130, 246, 0.14))",
+};
+
+const badgeStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  borderRadius: "999px",
+  padding: "6px 12px",
+  background: "rgba(15, 118, 110, 0.12)",
+  color: "#0f766e",
+  fontWeight: 700,
+  fontSize: "0.85rem",
+};
+
+const titleStyle = {
+  margin: "10px 0 8px",
+  fontSize: "1.2rem",
+  color: "#102a43",
+};
+
+const textStyle = {
+  margin: "6px 0",
+  color: "#486581",
+};
+
+const priceStyle = {
+  color: "#134e4a",
+  fontSize: "1.4rem",
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+};
+
+const mapButtonStyle = (isSelected) => ({
+  border: "1px solid rgba(15, 118, 110, 0.18)",
+  borderRadius: "999px",
+  padding: "9px 12px",
+  background: isSelected ? "rgba(15, 118, 110, 0.12)" : "#ffffff",
+  color: "#0f766e",
+  fontWeight: 700,
+  cursor: "pointer",
+});
+
+const favoriteButtonStyle = (isFavorite) => ({
+  border: "1px solid rgba(29, 78, 216, 0.18)",
+  borderRadius: "999px",
+  padding: "9px 12px",
+  background: isFavorite ? "rgba(29, 78, 216, 0.12)" : "#ffffff",
+  color: "#1d4ed8",
+  fontWeight: 700,
+  cursor: "pointer",
+});
+
+const getLocationText = (location) =>
+  typeof location === "string" ? location : location?.address ?? "Location unavailable";
+
+const getConfiguredSpotMix = (slot) => {
+  const totalSpots = Number(slot.totalActiveSpots ?? slot.availableSlots ?? 0);
+  const accessibleSpots =
+    Number(slot.allocationConfig?.accessibleSpotCount ?? 0) || 0;
+  const vipSpots = Number(slot.allocationConfig?.vipSpotCount ?? 0) || 0;
+
+  return {
+    accessible: accessibleSpots,
+    standard: Math.max(totalSpots - accessibleSpots - vipSpots, 0),
+    vip: vipSpots,
+  };
+};
+
+const formatSpotMix = (spotMix, label) => {
+  const parts = Object.entries(spotMix)
+    .filter(([, count]) => Number(count) > 0)
+    .map(
+      ([spotType, count]) =>
+        `${count} ${PARKING_SPOT_TYPE_LABELS[spotType] ?? spotType}`
+    );
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return `${label}: ${parts.join(" | ")}`;
+};
+
+function ParkingSlotCard({
+  bookingValue,
+  isBooking,
+  isFavorite,
+  isTogglingFavorite,
+  isSelected,
+  onBook,
+  onBookingChange,
+  onSelect,
+  onToggleFavorite,
+  slot,
+}) {
+  const availableLabel =
+    slot.availableSpotCount != null
+      ? `${slot.availableSpotCount} spot${slot.availableSpotCount === 1 ? "" : "s"} open`
+      : `${slot.availableSlots ?? 0} total spot${slot.availableSlots === 1 ? "" : "s"}`;
+  const spotMixLabel = formatSpotMix(
+    slot.availableSpotMix ?? getConfiguredSpotMix(slot),
+    slot.availableSpotMix ? "Open mix" : "Spot mix"
+  );
+
+  return (
+    <article
+      style={{
+        ...cardStyle,
+        border: isSelected
+          ? "1px solid rgba(15, 118, 110, 0.3)"
+          : cardStyle.border,
+        boxShadow: isSelected
+          ? "0 22px 48px rgba(15, 118, 110, 0.12)"
+          : cardStyle.boxShadow,
+      }}
+    >
+      {slot.imageUrl ? (
+        <img
+          alt={slot.title}
+          src={resolveParkingImageUrl(slot.imageUrl)}
+          style={mediaStyle}
+        />
+      ) : (
+        <div
+          style={{
+            ...mediaStyle,
+            display: "grid",
+            placeItems: "center",
+            color: "#486581",
+            fontWeight: 700,
+          }}
+        >
+          Parking preview coming soon
+        </div>
+      )}
+
+      <div style={topRowStyle}>
+        <div>
+          <span style={badgeStyle}>{availableLabel}</span>
+          <h3 style={titleStyle}>{slot.title}</h3>
+          <p style={textStyle}>{getLocationText(slot.location)}</p>
+          {slot.distanceFromUserKm != null ? (
+            <p style={textStyle}>Approx. {formatDistanceAway(slot.distanceFromUserKm)}</p>
+          ) : null}
+          <p style={textStyle}>
+            Owner: {slot.owner?.name ?? "ParkPal Host"}
+          </p>
+          {spotMixLabel ? <p style={textStyle}>{spotMixLabel}</p> : null}
+        </div>
+
+        <div style={{ display: "grid", gap: "10px", justifyItems: "end" }}>
+          <div style={priceStyle}>Rs. {slot.pricePerHour}/hour</div>
+          {onToggleFavorite ? (
+            <button
+              onClick={() => onToggleFavorite(slot._id)}
+              style={favoriteButtonStyle(isFavorite)}
+              type="button"
+            >
+              {isTogglingFavorite ? "Saving..." : isFavorite ? "Saved Slot" : "Save Slot"}
+            </button>
+          ) : null}
+          {slot.location?.lat != null && slot.location?.lng != null ? (
+            <button
+              onClick={() => onSelect?.(slot._id)}
+              style={mapButtonStyle(isSelected)}
+              type="button"
+            >
+              {isSelected ? "Focused on map" : "Show on map"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <BookingForm
+        isSubmitting={isBooking}
+        onChange={(field, value) => onBookingChange(slot._id, field, value)}
+        onSubmit={() => onBook(slot._id)}
+        value={bookingValue}
+      />
+    </article>
+  );
+}
+
+export default ParkingSlotCard;
