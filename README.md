@@ -15,8 +15,11 @@ From the project root:
 ```powershell
 npm --prefix client install
 npm --prefix server install
+npm run seed:demo
 npm run dev
 ```
+
+If you want a populated local database for testing, run `npm run seed:demo` before `npm run dev`.
 
 The server needs a `server/.env` file with at least:
 
@@ -474,6 +477,8 @@ npm --prefix server install
 | `npm run dev:server` | Starts only the Express server with nodemon |
 | `npm run build` | Builds the client for production |
 | `npm run lint` | Runs client ESLint |
+| `npm run seed:demo` | Seeds demo admins, users, parking slots, favorites, and bookings |
+| `npm run seed:demo:force` | Replaces previously seeded demo bookings |
 | `npm run start` | Starts the backend in production mode |
 | `npm run test:server` | Runs backend tests |
 
