@@ -53,11 +53,41 @@ If you want to replace previously seeded demo bookings, run:
 npm run seed:demo:force
 ```
 
-Demo credentials:
+### Seeded Demo Accounts
 
-- Super admin: `superadmin@parkpal.test` / `SuperAdmin@123`
-- Mall admins: use any seeded mall admin email / `Mall@123`
-- Demo users: use any seeded `@parkpal.test` email / `User@123`
+These credentials are intentionally for local testing and demo data only. Do not reuse them in a public deployment or in a real production database.
+
+#### Super Admin
+
+| Role | Email | Password |
+| --- | --- | --- |
+| `super_admin` | `superadmin@parkpal.test` | `SuperAdmin@123` |
+
+#### Mall Admins
+
+| Mall | Email | Password |
+| --- | --- | --- |
+| Phoenix Mall Guntur | `phnxgntgtroad@gmail.com` | `Mall@123` |
+| Naaz Centre Guntur | `naazgntctr@gmail.com` | `Mall@123` |
+| PVP Square Vijayawada | `pvpvjamgrd@gmail.com` | `Mall@123` |
+| Trendset Mall Benz Circle | `trndstvjabnzc@gmail.com` | `Mall@123` |
+| LEPL Centro Vijayawada | `leplvjamgrd@gmail.com` | `Mall@123` |
+| CMR Central Vizag | `cmrvizmddlp@gmail.com` | `Mall@123` |
+| Dmart Vizag Madhurawada | `dmartvizmadhw@gmail.com` | `Mall@123` |
+| Ongole Dmart | `dmartongtrnkrd@gmail.com` | `Mall@123` |
+| MGB Felicity Mall Nellore | `mgbnlrctr@gmail.com` | `Mall@123` |
+| Garuda Mall Tirupati | `grdtrpaktp@gmail.com` | `Mall@123` |
+
+#### Demo Users
+
+| Name | Email | Password |
+| --- | --- | --- |
+| Ananya Reddy | `ananya@parkpal.test` | `User@123` |
+| Bharat Kumar | `bharat@parkpal.test` | `User@123` |
+| Charan Teja | `charan@parkpal.test` | `User@123` |
+| Divya Sri | `divya@parkpal.test` | `User@123` |
+| Harsha Vardhan | `harsha@parkpal.test` | `User@123` |
+| Keerthi Priya | `keerthi@parkpal.test` | `User@123` |
 
 ## Current Feature Set
 
@@ -103,7 +133,7 @@ Demo credentials:
 - View and manage platform-wide inventory
 - Monitor analytics and bookings across managed operators
 
-## Recommended Local Credentials
+## Manual Example Accounts
 
 If you use `npm run seed:demo`, use the seeded demo accounts above.
 

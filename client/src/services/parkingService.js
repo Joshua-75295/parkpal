@@ -4,6 +4,13 @@ import { API_BASE_URL } from "../utils/constants.js";
 const EARTH_RADIUS_KM = 6371;
 const API_ORIGIN = new URL(API_BASE_URL).origin;
 const MAX_PARKING_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const GEOLOCATION_ERROR_CODES = Object.freeze({
+  permissionDenied: 1,
+  positionUnavailable: 2,
+  timeout: 3,
+});
+const isSecureBrowserContext =
+  typeof window === "undefined" ? true : window.isSecureContext;
 
 export const getLocationText = (slot) =>
   typeof slot.location === "string" ? slot.location : slot.location?.address ?? "";
@@ -121,35 +128,102 @@ export const formatDistanceAway = (distanceKm) => {
   return `${normalizedDistance.toFixed(normalizedDistance < 10 ? 1 : 0)} km away`;
 };
 
-export const requestBrowserLocation = () =>
+const requestCurrentPosition = (options) =>
   new Promise((resolve, reject) => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      reject(new Error("Location services are not available in this browser."));
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          lat: Number(position.coords.latitude),
-          lng: Number(position.coords.longitude),
-        });
-      },
-      (error) => {
-        reject(
-          new Error(
-            error?.message ||
-              "Could not read your current location. Check browser permissions and try again."
-          )
-        );
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 60 * 1000,
-        timeout: 10 * 1000,
-      }
-    );
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
   });
+
+const getGeolocationPermissionState = async () => {
+  if (
+    typeof navigator === "undefined" ||
+    !navigator.permissions ||
+    typeof navigator.permissions.query !== "function"
+  ) {
+    return "";
+  }
+
+  try {
+    const result = await navigator.permissions.query({ name: "geolocation" });
+    return result?.state ?? "";
+  } catch {
+    return "";
+  }
+};
+
+const buildLocationErrorMessage = async (error) => {
+  const permissionState = await getGeolocationPermissionState();
+
+  if (!isSecureBrowserContext) {
+    return "Location works only in a secure context. Use localhost or HTTPS and try again.";
+  }
+
+  switch (error?.code) {
+    case GEOLOCATION_ERROR_CODES.permissionDenied:
+      if (permissionState === "granted") {
+        return "Location is allowed in the browser, but your device is still blocking it. Turn on system location services and allow your browser to use them.";
+      }
+
+      return "Location access was blocked. Allow location for this site and make sure your device location services are enabled.";
+    case GEOLOCATION_ERROR_CODES.positionUnavailable:
+      return "Your device could not determine a location right now. Check GPS or network-based location and try again.";
+    case GEOLOCATION_ERROR_CODES.timeout:
+      return "Location lookup timed out. Try again in a spot with better signal or internet access.";
+    default:
+      return (
+        error?.message ||
+        "Could not read your current location. Check browser permissions and try again."
+      );
+  }
+};
+
+export const requestBrowserLocation = async () => {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    throw new Error("Location services are not available in this browser.");
+  }
+
+  if (!isSecureBrowserContext) {
+    throw new Error(
+      "Location works only in a secure context. Use localhost or HTTPS and try again."
+    );
+  }
+
+  const locationRequestOptions = [
+    {
+      enableHighAccuracy: true,
+      maximumAge: 60 * 1000,
+      timeout: 10 * 1000,
+    },
+    {
+      enableHighAccuracy: false,
+      maximumAge: 5 * 60 * 1000,
+      timeout: 15 * 1000,
+    },
+  ];
+
+  let lastError = null;
+
+  for (const options of locationRequestOptions) {
+    try {
+      const position = await requestCurrentPosition(options);
+
+      return {
+        lat: Number(position.coords.latitude),
+        lng: Number(position.coords.longitude),
+      };
+    } catch (error) {
+      lastError = error;
+
+      if (
+        error?.code !== GEOLOCATION_ERROR_CODES.timeout &&
+        error?.code !== GEOLOCATION_ERROR_CODES.positionUnavailable
+      ) {
+        break;
+      }
+    }
+  }
+
+  throw new Error(await buildLocationErrorMessage(lastError));
+};
 
 export const readImageFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {

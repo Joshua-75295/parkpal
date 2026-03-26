@@ -29,6 +29,15 @@ const ADMIN_PASSWORD = "Mall@123";
 const USER_PASSWORD = "User@123";
 const SUPER_ADMIN_PASSWORD = "SuperAdmin@123";
 const MS_PER_MINUTE = 60 * 1000;
+const DEMO_PARKING_IMAGE_URLS = [
+  "https://upload.wikimedia.org/wikipedia/commons/7/75/Parking_Garage.jpg",
+  "https://upload.wikimedia.org/wikipedia/commons/6/61/Parking_lot_20220501_234627.jpg",
+  "https://upload.wikimedia.org/wikipedia/commons/7/7b/Parking_lot.JPG",
+  "https://upload.wikimedia.org/wikipedia/commons/c/c5/Multistorey_car_park.jpg",
+  "https://upload.wikimedia.org/wikipedia/commons/7/7d/Underground_parking.jpg",
+  "https://upload.wikimedia.org/wikipedia/commons/0/02/Underground_parking_2.jpg",
+  "https://upload.wikimedia.org/wikipedia/commons/1/1d/Underground_parking_entrance_%2842888040441%29.jpg",
+];
 
 const hasFlag = (flag) => process.argv.slice(2).includes(flag);
 
@@ -224,7 +233,15 @@ const mallAdminSeeds = [
       },
     },
   },
-];
+].map((mallAdminSeed, index) => ({
+  ...mallAdminSeed,
+  slot: {
+    ...mallAdminSeed.slot,
+    imageUrl:
+      mallAdminSeed.slot.imageUrl ??
+      DEMO_PARKING_IMAGE_URLS[index % DEMO_PARKING_IMAGE_URLS.length],
+  },
+}));
 
 const demoUserSeeds = [
   {
@@ -334,7 +351,7 @@ const upsertParkingSlot = async (slotSeed, ownerId) => {
     {
       $set: {
         title: slotSeed.title,
-        imageUrl: "",
+        imageUrl: slotSeed.imageUrl ?? "",
         location: {
           address: slotSeed.address,
           lat: slotSeed.lat,
