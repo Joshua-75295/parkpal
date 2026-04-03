@@ -1,8 +1,10 @@
 import API from "./api.js";
-import { API_BASE_URL } from "../utils/constants.js";
+import { API_BASE_URL, ROUTING_API_BASE_URL } from "../utils/constants.js";
 
 const EARTH_RADIUS_KM = 6371;
 const API_ORIGIN = new URL(API_BASE_URL).origin;
+const ROUTING_PROFILE = "driving";
+const ROUTING_BATCH_SIZE = 24;
 const MAX_PARKING_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const GEOLOCATION_ERROR_CODES = Object.freeze({
   permissionDenied: 1,
@@ -167,6 +169,9 @@ export const getSlotCoordinates = (slot) =>
     ? [Number(slot.location.lat), Number(slot.location.lng)]
     : null;
 
+const hasCoordinatePoint = (point) =>
+  Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng));
+
 const toRadians = (value) => (value * Math.PI) / 180;
 
 export const getDistanceBetweenCoordinatesKm = (origin, destination) => {
@@ -195,9 +200,165 @@ export const getDistanceBetweenCoordinatesKm = (origin, destination) => {
   return Number((EARTH_RADIUS_KM * arc).toFixed(2));
 };
 
-export const enrichSlotWithDistance = (slot, userLocation) => {
+const chunkItems = (items, size) => {
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+};
+
+const toRoutingCoordinate = (point) => `${Number(point.lng)},${Number(point.lat)}`;
+
+const createRoutingUrl = (pathname, searchParams) => {
+  const routingBaseUrl = ROUTING_API_BASE_URL.endsWith("/")
+    ? ROUTING_API_BASE_URL
+    : `${ROUTING_API_BASE_URL}/`;
+  const url = new URL(pathname.replace(/^\//, ""), routingBaseUrl);
+
+  Object.entries(searchParams ?? {}).forEach(([key, value]) => {
+    if (value !== "" && value != null) {
+      url.searchParams.set(key, value);
+    }
+  });
+
+  return url;
+};
+
+const fetchRoutingPayload = async (pathname, searchParams, { signal } = {}) => {
+  const response = await fetch(createRoutingUrl(pathname, searchParams), { signal });
+
+  if (!response.ok) {
+    throw new Error("Road routing is unavailable right now.");
+  }
+
+  const payload = await response.json();
+
+  if (payload?.code !== "Ok") {
+    throw new Error("Road routing is unavailable right now.");
+  }
+
+  return payload;
+};
+
+export const fetchRoadMetricsForSlots = async (
+  slots,
+  userLocation,
+  { signal } = {}
+) => {
+  if (!hasCoordinatePoint(userLocation)) {
+    return {};
+  }
+
+  const mappedSlots = slots.filter(hasSlotCoordinates);
+
+  if (!mappedSlots.length) {
+    return {};
+  }
+
+  const metricsBySlotId = {};
+
+  for (const batch of chunkItems(mappedSlots, ROUTING_BATCH_SIZE)) {
+    const coordinates = [
+      toRoutingCoordinate(userLocation),
+      ...batch.map((slot) => toRoutingCoordinate(slot.location)),
+    ].join(";");
+    const destinations = batch.map((_, index) => index + 1).join(";");
+    const payload = await fetchRoutingPayload(
+      `table/v1/${ROUTING_PROFILE}/${coordinates}`,
+      {
+        annotations: "distance,duration",
+        destinations,
+        sources: "0",
+      },
+      { signal }
+    );
+    const distances = payload?.distances?.[0] ?? [];
+    const durations = payload?.durations?.[0] ?? [];
+
+    batch.forEach((slot, index) => {
+      const distanceMeters = Number(distances[index]);
+      const durationSeconds = Number(durations[index]);
+
+      if (
+        !Number.isFinite(distanceMeters) &&
+        !Number.isFinite(durationSeconds)
+      ) {
+        return;
+      }
+
+      metricsBySlotId[slot._id] = {
+        distanceKm: Number.isFinite(distanceMeters)
+          ? Number((distanceMeters / 1000).toFixed(2))
+          : null,
+        durationMinutes: Number.isFinite(durationSeconds)
+          ? Math.max(1, Math.round(durationSeconds / 60))
+          : null,
+      };
+    });
+  }
+
+  return metricsBySlotId;
+};
+
+export const fetchDrivingRoute = async (
+  origin,
+  destination,
+  { signal } = {}
+) => {
+  if (!hasCoordinatePoint(origin) || !hasCoordinatePoint(destination)) {
+    return null;
+  }
+
+  const payload = await fetchRoutingPayload(
+    `route/v1/${ROUTING_PROFILE}/${toRoutingCoordinate(origin)};${toRoutingCoordinate(
+      destination
+    )}`,
+    {
+      geometries: "geojson",
+      overview: "full",
+    },
+    { signal }
+  );
+  const route = Array.isArray(payload?.routes) ? payload.routes[0] : null;
+
+  if (!route) {
+    return null;
+  }
+
+  return {
+    coordinates: Array.isArray(route.geometry?.coordinates)
+      ? route.geometry.coordinates.map(([lng, lat]) => [Number(lat), Number(lng)])
+      : [],
+    distanceKm: Number.isFinite(Number(route.distance))
+      ? Number((Number(route.distance) / 1000).toFixed(2))
+      : null,
+    durationMinutes: Number.isFinite(Number(route.duration))
+      ? Math.max(1, Math.round(Number(route.duration) / 60))
+      : null,
+  };
+};
+
+export const enrichSlotWithDistance = (
+  slot,
+  userLocation,
+  roadMetricsBySlotId = {}
+) => {
   if (!userLocation || !hasSlotCoordinates(slot)) {
     return slot;
+  }
+
+  const roadMetric = roadMetricsBySlotId?.[slot._id];
+
+  if (roadMetric) {
+    return {
+      ...slot,
+      distanceFromUserKm: roadMetric.distanceKm,
+      distanceMethod: "road",
+      travelDurationMinutes: roadMetric.durationMinutes,
+    };
   }
 
   const [lat, lng] = getSlotCoordinates(slot);
@@ -208,12 +369,16 @@ export const enrichSlotWithDistance = (slot, userLocation) => {
 
   return {
     ...slot,
+    distanceMethod: "straight",
     distanceFromUserKm,
   };
 };
 
-export const enrichSlotsWithDistance = (slots, userLocation) =>
-  slots.map((slot) => enrichSlotWithDistance(slot, userLocation));
+export const enrichSlotsWithDistance = (
+  slots,
+  userLocation,
+  roadMetricsBySlotId = {}
+) => slots.map((slot) => enrichSlotWithDistance(slot, userLocation, roadMetricsBySlotId));
 
 export const sortSlotsByDistance = (slots) =>
   [...slots].sort((leftSlot, rightSlot) => {
@@ -249,6 +414,59 @@ export const formatDistanceAway = (distanceKm) => {
   }
 
   return `${normalizedDistance.toFixed(normalizedDistance < 10 ? 1 : 0)} km away`;
+};
+
+export const formatTravelDistance = (
+  distanceKm,
+  distanceMethod = "straight"
+) => {
+  const normalizedDistance = Number(distanceKm);
+
+  if (!Number.isFinite(normalizedDistance)) {
+    return "";
+  }
+
+  const distanceLabel =
+    normalizedDistance < 1
+      ? `${Math.round(normalizedDistance * 1000)} m`
+      : `${normalizedDistance.toFixed(normalizedDistance < 10 ? 1 : 0)} km`;
+
+  return distanceMethod === "road"
+    ? `${distanceLabel} by road`
+    : `${distanceLabel} away`;
+};
+
+export const formatTravelDuration = (durationMinutes) => {
+  const normalizedDuration = Number(durationMinutes);
+
+  if (!Number.isFinite(normalizedDuration) || normalizedDuration <= 0) {
+    return "";
+  }
+
+  if (normalizedDuration < 60) {
+    return `${Math.round(normalizedDuration)} min drive`;
+  }
+
+  const hours = Math.floor(normalizedDuration / 60);
+  const minutes = Math.round(normalizedDuration % 60);
+
+  if (minutes === 0) {
+    return `${hours} hr drive`;
+  }
+
+  return `${hours} hr ${minutes} min drive`;
+};
+
+export const formatTravelSummary = (
+  distanceKm,
+  durationMinutes,
+  distanceMethod = "straight"
+) => {
+  const distanceLabel = formatTravelDistance(distanceKm, distanceMethod);
+  const durationLabel =
+    distanceMethod === "road" ? formatTravelDuration(durationMinutes) : "";
+
+  return [distanceLabel, durationLabel].filter(Boolean).join(" · ");
 };
 
 const requestCurrentPosition = (options) =>

@@ -14,7 +14,7 @@ import {
   DEFAULT_MAP_ZOOM,
 } from "../utils/constants.js";
 import {
-  formatDistanceAway,
+  formatTravelSummary,
   getLocationText,
   getSlotCoordinates,
   hasSlotCoordinates,
@@ -24,14 +24,14 @@ import "leaflet/dist/leaflet.css";
 const wrapperStyle = {
   background: "#ffffff",
   borderRadius: "24px",
-  padding: "18px",
+  padding: "16px",
   border: "1px solid rgba(16, 42, 67, 0.08)",
   boxShadow: "0 18px 40px rgba(16, 42, 67, 0.08)",
 };
 
 const mapStyle = {
   width: "100%",
-  height: "420px",
+  height: "clamp(260px, 42vw, 420px)",
   borderRadius: "18px",
 };
 
@@ -84,7 +84,9 @@ function SyncMapView({ points, selectedSlotId, userLocation }) {
 
 function ParkingMap({
   emptyLabel = "Parking locations with map coordinates will appear here.",
+  isRouting = false,
   onSelect,
+  routeDetails = null,
   selectedSlotId,
   slots,
   subtitle = "Tap a marker to inspect a slot and line it up with the list.",
@@ -108,11 +110,8 @@ function ParkingMap({
   );
   const selectedPoint = points.find((point) => point._id === selectedSlotId) ?? null;
   const routeLine =
-    userLocation && selectedPoint
-      ? [
-          [Number(userLocation.lat), Number(userLocation.lng)],
-          [selectedPoint.lat, selectedPoint.lng],
-        ]
+    Array.isArray(routeDetails?.coordinates) && routeDetails.coordinates.length > 1
+      ? routeDetails.coordinates
       : null;
 
   return (
@@ -132,6 +131,19 @@ function ParkingMap({
           <p style={{ margin: 0, color: "#486581", lineHeight: 1.6 }}>
             {subtitle}
           </p>
+          {userLocation && selectedPoint ? (
+            <p style={{ margin: "8px 0 0", color: "#0f766e", lineHeight: 1.6 }}>
+              {isRouting
+                ? "Calculating road route..."
+                : routeDetails?.distanceKm != null
+                  ? `Route: ${formatTravelSummary(
+                      routeDetails.distanceKm,
+                      routeDetails.durationMinutes,
+                      "road"
+                    )}`
+                  : "Road route not available for the selected slot right now."}
+            </p>
+          ) : null}
         </div>
 
         <span
@@ -235,7 +247,11 @@ function ParkingMap({
                   {slot.distanceFromUserKm != null ? (
                     <>
                       <br />
-                      {formatDistanceAway(slot.distanceFromUserKm)}
+                      {formatTravelSummary(
+                        slot.distanceFromUserKm,
+                        slot.travelDurationMinutes,
+                        slot.distanceMethod
+                      )}
                     </>
                   ) : null}
                 </Popup>

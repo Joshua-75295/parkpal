@@ -9,7 +9,11 @@ import { getApiErrorMessage } from "../services/api.js";
 import {
   addFavoriteParkingSlot,
   enrichSlotsWithDistance,
-  formatDistanceAway,
+  fetchDrivingRoute,
+  fetchRoadMetricsForSlots,
+  formatTravelDistance,
+  formatTravelSummary,
+  formatTravelDuration,
   getFavoriteParkingSlotIds,
   getParkingSlots,
   hasSlotCoordinates,
@@ -33,8 +37,8 @@ const initialFilters = {
 
 const pageStyle = {
   display: "grid",
-  gap: "22px",
-  padding: "36px 0 20px",
+  gap: "18px",
+  padding: "clamp(22px, 4vw, 36px) 0 20px",
 };
 
 const heroStyle = {
@@ -45,7 +49,7 @@ const heroStyle = {
 const filterCardStyle = {
   background: "#ffffff",
   borderRadius: "24px",
-  padding: "22px",
+  padding: "18px",
   border: "1px solid rgba(16, 42, 67, 0.08)",
   boxShadow: "0 18px 40px rgba(16, 42, 67, 0.08)",
 };
@@ -74,9 +78,9 @@ const inputStyle = {
 
 const buttonRowStyle = {
   display: "flex",
-  gap: "12px",
+  gap: "10px",
   flexWrap: "wrap",
-  marginTop: "16px",
+  marginTop: "14px",
 };
 
 const primaryButtonStyle = {
@@ -99,27 +103,28 @@ const secondaryButtonStyle = {
   cursor: "pointer",
 };
 
-const resultsLayoutStyle = {
+const mapPanelStyle = {
   display: "grid",
-  gap: "20px",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: "12px",
 };
 
 const listPanelStyle = {
   display: "grid",
-  gap: "18px",
+  gap: "14px",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+  alignItems: "start",
 };
 
 const summaryGridStyle = {
   display: "grid",
-  gap: "14px",
+  gap: "12px",
   gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
 };
 
 const summaryCardStyle = {
   background: "#ffffff",
   borderRadius: "18px",
-  padding: "16px",
+  padding: "14px",
   border: "1px solid rgba(16, 42, 67, 0.08)",
   boxShadow: "0 18px 40px rgba(16, 42, 67, 0.06)",
 };
@@ -147,6 +152,29 @@ const statusTextStyle = {
   lineHeight: 1.6,
 };
 
+const sectionHeadingStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "10px",
+  flexWrap: "wrap",
+};
+
+const sectionEyebrowStyle = {
+  margin: 0,
+  color: "#486581",
+  lineHeight: 1.6,
+};
+
+const resultsCountStyle = {
+  borderRadius: "999px",
+  padding: "8px 12px",
+  background: "rgba(15, 118, 110, 0.12)",
+  color: "#0f766e",
+  fontWeight: 700,
+  fontSize: "0.9rem",
+};
+
 function SearchPage() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
@@ -157,14 +185,22 @@ function SearchPage() {
   const [favoriteParkingSlotIds, setFavoriteParkingSlotIds] = useState([]);
   const [hasHandledRebookRequest, setHasHandledRebookRequest] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRouting, setIsRouting] = useState(false);
   const [activeBookingId, setActiveBookingId] = useState("");
   const [activeFavoriteId, setActiveFavoriteId] = useState("");
+  const [roadMetricsBySlotId, setRoadMetricsBySlotId] = useState({});
   const [selectedSlotId, setSelectedSlotId] = useState("");
+  const [selectedRoute, setSelectedRoute] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isNearestMode, setIsNearestMode] = useState(false);
   const [toast, setToast] = useState(null);
   const rebookRequest = routerLocation.state?.rebookRequest ?? null;
+
+  const hasRoadDistances = useMemo(
+    () => Object.keys(roadMetricsBySlotId).length > 0,
+    [roadMetricsBySlotId]
+  );
 
   const loadSlots = useCallback(async (nextFilters) => {
     setIsLoading(true);
@@ -220,9 +256,65 @@ function SearchPage() {
     loadFavoriteSlots().catch(() => null);
   }, [loadFavoriteSlots]);
 
+  const loadRoadMetricsForLocation = useCallback(
+    async (location, { showFallbackToast = false, signal } = {}) => {
+      if (!location) {
+        setRoadMetricsBySlotId({});
+        return {};
+      }
+
+      try {
+        const nextRoadMetrics = await fetchRoadMetricsForSlots(slots, location, {
+          signal,
+        });
+
+        setRoadMetricsBySlotId(nextRoadMetrics);
+        return nextRoadMetrics;
+      } catch (requestError) {
+        if (requestError?.name === "AbortError") {
+          throw requestError;
+        }
+
+        setRoadMetricsBySlotId({});
+
+        if (showFallbackToast) {
+          setToast((currentToast) =>
+            currentToast ?? {
+              type: "info",
+              title: "Road routing unavailable",
+              message:
+                "Using approximate straight-line distance until road routing is available again.",
+            }
+          );
+        }
+
+        return {};
+      }
+    },
+    [slots]
+  );
+
+  useEffect(() => {
+    if (!userLocation) {
+      setRoadMetricsBySlotId({});
+      return;
+    }
+
+    const abortController = new AbortController();
+
+    loadRoadMetricsForLocation(userLocation, {
+      showFallbackToast: true,
+      signal: abortController.signal,
+    }).catch(() => null);
+
+    return () => {
+      abortController.abort();
+    };
+  }, [loadRoadMetricsForLocation, userLocation]);
+
   const slotsWithDistance = useMemo(
-    () => enrichSlotsWithDistance(slots, userLocation),
-    [slots, userLocation]
+    () => enrichSlotsWithDistance(slots, userLocation, roadMetricsBySlotId),
+    [roadMetricsBySlotId, slots, userLocation]
   );
 
   const distanceSortedSlots = useMemo(
@@ -257,6 +349,49 @@ function SearchPage() {
       })),
     [displaySlots, favoriteParkingSlotIdSet]
   );
+
+  useEffect(() => {
+    if (!userLocation) {
+      setSelectedRoute(null);
+      setIsRouting(false);
+      return;
+    }
+
+    const selectedSlot = displaySlots.find((slot) => slot._id === selectedSlotId);
+
+    if (!selectedSlot || !hasSlotCoordinates(selectedSlot)) {
+      setSelectedRoute(null);
+      setIsRouting(false);
+      return;
+    }
+
+    const abortController = new AbortController();
+
+    setIsRouting(true);
+
+    fetchDrivingRoute(userLocation, selectedSlot.location, {
+      signal: abortController.signal,
+    })
+      .then((route) => {
+        setSelectedRoute(route);
+      })
+      .catch((requestError) => {
+        if (requestError?.name === "AbortError") {
+          return;
+        }
+
+        setSelectedRoute(null);
+      })
+      .finally(() => {
+        if (!abortController.signal.aborted) {
+          setIsRouting(false);
+        }
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [displaySlots, selectedSlotId, userLocation]);
 
   useEffect(() => {
     const unsubscribeInventory = subscribeToRealtimeEvent(
@@ -377,7 +512,13 @@ function SearchPage() {
 
     return {
       closestDistance: nearestMappedSlot
-        ? formatDistanceAway(nearestMappedSlot.distanceFromUserKm)
+        ? formatTravelDistance(
+            nearestMappedSlot.distanceFromUserKm,
+            nearestMappedSlot.distanceMethod
+          )
+        : "",
+      closestDuration: nearestMappedSlot
+        ? formatTravelDuration(nearestMappedSlot.travelDurationMinutes)
         : "",
       closestTitle: nearestMappedSlot?.title ?? "",
       mappedSlots,
@@ -458,12 +599,21 @@ function SearchPage() {
   }, []);
 
   const findNearestMappedSlot = useCallback(
-    (location) =>
-      sortSlotsByDistance(enrichSlotsWithDistance(slots, location)).find(
-        (slot) =>
-          hasSlotCoordinates(slot) && slot.distanceFromUserKm != null
-      ) ?? null,
-    [slots]
+    async (location) => {
+      const nextRoadMetrics = await loadRoadMetricsForLocation(location, {
+        showFallbackToast: true,
+      });
+
+      return (
+        sortSlotsByDistance(
+          enrichSlotsWithDistance(slots, location, nextRoadMetrics)
+        ).find(
+          (slot) =>
+            hasSlotCoordinates(slot) && slot.distanceFromUserKm != null
+        ) ?? null
+      );
+    },
+    [loadRoadMetricsForLocation, slots]
   );
 
   const handleUseMyLocation = async () => {
@@ -473,11 +623,15 @@ function SearchPage() {
       return;
     }
 
+    loadRoadMetricsForLocation(location, {
+      showFallbackToast: true,
+    }).catch(() => null);
+
     setToast({
       type: "success",
       title: "Location ready",
       message:
-        "Distance estimates are now live. You can sort results by the nearest parking slot.",
+        "Road distance estimates are now live. You can sort results by the nearest parking slot.",
     });
   };
 
@@ -488,7 +642,7 @@ function SearchPage() {
       return;
     }
 
-    const nearestSlot = findNearestMappedSlot(location);
+    const nearestSlot = await findNearestMappedSlot(location);
 
     if (!nearestSlot) {
       setToast({
@@ -505,8 +659,10 @@ function SearchPage() {
     setToast({
       type: "success",
       title: "Nearest parking focused",
-      message: `${nearestSlot.title} is the closest mapped option at ${formatDistanceAway(
-        nearestSlot.distanceFromUserKm
+      message: `${nearestSlot.title} is the closest mapped option at ${formatTravelSummary(
+        nearestSlot.distanceFromUserKm,
+        nearestSlot.travelDurationMinutes,
+        nearestSlot.distanceMethod
       )}.`,
     });
   };
@@ -661,13 +817,14 @@ function SearchPage() {
             <strong
               style={{ display: "block", marginBottom: "6px", color: "#486581" }}
             >
-              Closest mapped
+              {hasRoadDistances ? "Closest by road" : "Closest mapped"}
             </strong>
             <span style={{ fontSize: "1.35rem", fontWeight: 800, color: "#102a43" }}>
               {summary.closestDistance || "Not available"}
             </span>
             <p style={{ margin: "8px 0 0", color: "#486581" }}>
               {summary.closestTitle || "No map-ready slots in these results yet."}
+              {summary.closestDuration ? ` · ${summary.closestDuration}` : ""}
             </p>
           </article>
         ) : null}
@@ -797,8 +954,10 @@ function SearchPage() {
           <p style={statusTextStyle}>
             {userLocation
               ? isNearestMode
-                ? "Nearest-first sorting is active and the blue route line follows the focused slot on the map."
-                : "Distance estimates are live. Turn on nearest parking to sort the list by proximity."
+                ? "Nearest-first sorting is active and the map follows the focused driving route."
+                : hasRoadDistances
+                  ? "Road distance estimates are live. Turn on nearest parking to sort the list by real driving distance."
+                  : "Approximate distance estimates are live while road routing is loading."
               : "Enable location to see how far each slot is from you and jump to the closest mapped option."}
           </p>
         </div>
@@ -812,16 +971,40 @@ function SearchPage() {
         </p>
       ) : null}
 
-      <div style={resultsLayoutStyle}>
-        <div style={{ alignSelf: "start" }}>
-          <ParkingMap
-            emptyLabel="These results do not include map coordinates yet, so the list is doing the heavy lifting."
-            onSelect={setSelectedSlotId}
-            selectedSlotId={selectedSlotId}
-            slots={displaySlots}
-            title="Live Parking Map"
-            userLocation={userLocation}
-          />
+      <div style={mapPanelStyle}>
+        <div style={sectionHeadingStyle}>
+          <div>
+            <h2 style={{ margin: "0 0 6px", color: "#102a43" }}>Map First</h2>
+            <p style={sectionEyebrowStyle}>
+              Start with the map, then browse the parking options in a compact grid below.
+            </p>
+          </div>
+          <span style={resultsCountStyle}>
+            {displaySlots.length} result{displaySlots.length === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        <ParkingMap
+          emptyLabel="These results do not include map coordinates yet, so the card grid is doing the heavy lifting."
+          isRouting={isRouting}
+          onSelect={setSelectedSlotId}
+          routeDetails={selectedRoute}
+          selectedSlotId={selectedSlotId}
+          slots={displaySlots}
+          subtitle="Tap a marker to focus a slot, then compare the compact cards below."
+          title="Live Parking Map"
+          userLocation={userLocation}
+        />
+
+        <div style={sectionHeadingStyle}>
+          <div>
+            <h2 style={{ margin: "0 0 6px", color: "#102a43" }}>
+              Available Parking
+            </h2>
+            <p style={sectionEyebrowStyle}>
+              Cards are smaller now and flow row by row so you can scan more options without endless scrolling.
+            </p>
+          </div>
         </div>
 
         <div style={listPanelStyle}>

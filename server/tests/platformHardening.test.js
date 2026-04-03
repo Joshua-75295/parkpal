@@ -1,7 +1,15 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
+import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
+import { createApp } from "../app.js";
+import {
+  resolveParkingUploadDirectory,
+  resolveUploadsDirectory,
+} from "../config/storage.js";
 import {
   adminControllerDependencies,
   validateManagedBooking,
@@ -23,6 +31,20 @@ import {
 process.env.NODE_ENV = "test";
 process.env.JWT_ACCESS_SECRET ??= "test-access-secret";
 process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret";
+
+const listenToApp = async (app) => {
+  const server = createServer(app);
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address();
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    server,
+  };
+};
 
 test("loginUser issues a cookie-based session for valid credentials", async () => {
   const originalFindOne = User.findOne;
@@ -65,6 +87,78 @@ test("loginUser issues a cookie-based session for valid credentials", async () =
     User.findOne = originalFindOne;
     User.findByIdAndUpdate = originalFindByIdAndUpdate;
   }
+});
+
+test("health endpoint reports degraded status and blocks API routes while the database is unavailable", async () => {
+  const app = createApp(undefined, {
+    getDatabaseHealth: () => ({
+      attemptCount: 2,
+      isReady: false,
+      lastError: "Connection timeout",
+      readyState: 0,
+      status: "connecting",
+    }),
+    getUploadsDirectory: () => resolveUploadsDirectory("test-uploads"),
+    isDatabaseReady: () => false,
+  });
+  const { baseUrl, server } = await listenToApp(app);
+
+  try {
+    const healthResponse = await fetch(`${baseUrl}/api/health`);
+    const healthPayload = await healthResponse.json();
+    const parkingResponse = await fetch(`${baseUrl}/api/parking`);
+    const parkingPayload = await parkingResponse.json();
+
+    assert.equal(healthResponse.status, 503);
+    assert.equal(healthPayload.service.status, "degraded");
+    assert.equal(healthPayload.database.lastError, "Connection timeout");
+    assert.equal(parkingResponse.status, 503);
+    assert.equal(parkingPayload.code, "DATABASE_UNAVAILABLE");
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
+test("health endpoint reports ok once the database is ready", async () => {
+  const app = createApp(undefined, {
+    getDatabaseHealth: () => ({
+      attemptCount: 1,
+      connectedAt: "2026-04-03T09:00:00.000Z",
+      host: "cluster.mongodb.net",
+      isReady: true,
+      readyState: 1,
+      status: "ready",
+    }),
+    getUploadsDirectory: () => resolveUploadsDirectory("test-uploads"),
+    isDatabaseReady: () => true,
+  });
+  const { baseUrl, server } = await listenToApp(app);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/health`);
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.service.status, "ok");
+    assert.equal(payload.database.host, "cluster.mongodb.net");
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
+test("storage config resolves parking uploads inside the configured uploads root", () => {
+  const uploadsDirectory = resolveUploadsDirectory("custom-uploads");
+
+  assert.equal(
+    resolveParkingUploadDirectory("custom-uploads"),
+    path.join(uploadsDirectory, "parking")
+  );
+  assert.equal(
+    resolveParkingUploadDirectory(""),
+    path.join(resolveUploadsDirectory(""), "parking")
+  );
 });
 
 test("createBooking rejects a request when all matching spots are unavailable", async () => {

@@ -6,7 +6,7 @@ ParkPal is a full-stack parking management and booking platform built for three 
 - `admin`: manage owned inventory, upload slot images, validate arrivals, and monitor daily operations
 - `super_admin`: manage admins, view cross-admin inventory, and monitor analytics across managed slots
 
-The project now goes well beyond a basic CRUD demo. It includes cookie-based auth with refresh tokens, role-aware routing, real-time updates, map intelligence, booking lifecycle automation, analytics, favorites, quick rebook, and local image upload for parking slots.
+The project now goes well beyond a basic CRUD demo. It includes cookie-based auth with refresh tokens, role-aware routing, real-time updates, road-aware map intelligence, booking lifecycle automation, analytics, favorites, quick rebook, responsive search results, and local image upload for parking slots.
 
 ## Quick Start
 
@@ -29,6 +29,30 @@ JWT_SECRET=your_long_random_secret
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 CLIENT_ORIGIN=http://localhost:5173
+```
+
+Recommended for real local development:
+
+```env
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=fallback_secret_for_legacy_resolution
+JWT_ACCESS_SECRET=your_access_secret
+JWT_REFRESH_SECRET=your_refresh_secret
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+CLIENT_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
+BOOKING_EXPIRY_MINUTES=15
+UPLOADS_DIRECTORY=optional_persistent_uploads_root
+MONGO_RETRY_DELAY_MS=5000
+MONGO_SERVER_SELECTION_TIMEOUT_MS=10000
+```
+
+Optional client env:
+
+```env
+VITE_API_BASE_URL=http://localhost:5000/api
+VITE_SOCKET_SERVER_URL=http://localhost:5000
+VITE_ROUTING_API_BASE_URL=https://router.project-osrm.org
 ```
 
 ## Demo Data
@@ -96,7 +120,8 @@ These credentials are intentionally for local testing and demo data only. Do not
 - Register and login with secure HTTP-only cookie sessions
 - Search parking slots by location, price, and optional live time range
 - View parking inventory on a Leaflet map with OpenStreetMap tiles
-- Use browser location to see nearby slots and sort by nearest parking
+- Use browser location to see road distance, estimated drive time, and sort by nearest parking
+- Browse results in a compact map-first responsive grid instead of one long mobile-heavy column
 - Create bookings with spot preference:
   - `nearest`
   - `standard`
@@ -155,7 +180,7 @@ Important:
 | Layer | Technology |
 | --- | --- |
 | Frontend | React 19, Vite, React Router, Axios |
-| Maps | Leaflet, React Leaflet, OpenStreetMap |
+| Maps and Routing | Leaflet, React Leaflet, OpenStreetMap, OSRM |
 | Realtime | Socket.IO client and server |
 | Backend | Node.js, Express |
 | Database | MongoDB, Mongoose |
@@ -188,7 +213,8 @@ The backend also includes:
 
 - centralized async and error middleware
 - route-level rate limiting for auth, booking mutations, and admin mutations
-- regression tests for auth, booking conflicts, and admin permissions
+- MongoDB retry/backoff and database-readiness health reporting
+- regression tests for auth, booking conflicts, admin permissions, storage, and readiness behavior
 
 ## Product Highlights
 
@@ -241,11 +267,12 @@ The search experience includes:
 - map and list synchronization
 - current-user location
 - nearest parking sorting
-- distance labels
+- road-distance and drive-time labels
 - highlighted selected slot
-- simple route preview line between user and selected slot
+- real road-route preview for the focused slot
+- graceful fallback to approximate distance if routing is temporarily unavailable
 
-No Google Maps or Mapbox API key is required. The map uses OpenStreetMap tiles.
+No Google Maps or Mapbox API key is required. The map uses OpenStreetMap tiles and the OSRM routing service by default.
 
 ### 5. Favorites and Quick Rebook
 
@@ -265,7 +292,7 @@ Admins can now:
 - remove it
 - optionally use an external image URL instead
 
-Uploaded files are stored locally on the server under `server/uploads/parking` and served via `/uploads/...`.
+Uploaded files are stored under the backend uploads directory and served via `/uploads/...`. By default that is `server/uploads/parking`, and you can move it to a persistent location with `UPLOADS_DIRECTORY`.
 
 ## Project Structure
 
@@ -308,7 +335,8 @@ parkpal/
 |   `-- package.json
 |-- server/
 |   |-- config/
-|   |   `-- db.js
+|   |   |-- db.js
+|   |   `-- storage.js
 |   |-- controllers/
 |   |   |-- adminController.js
 |   |   |-- authController.js
@@ -353,7 +381,7 @@ parkpal/
 ### Entry and Routing
 
 - `main.jsx` boots the app inside `AuthProvider`
-- `App.jsx` handles route registration
+- `App.jsx` lazy-loads route pages and handles route registration
 - `ProtectedRoute.jsx` guards authenticated routes
 - `AdminRoute.jsx` guards admin-only routes
 
@@ -376,8 +404,8 @@ parkpal/
 
 ### App Bootstrap
 
-- `server.js` loads env vars, connects MongoDB, starts Express and Socket.IO, and runs lifecycle maintenance on an interval
-- `app.js` builds the Express app, enables CORS, parses JSON, serves uploads, and mounts routes
+- `server.js` loads env vars, starts Express and Socket.IO immediately, retries MongoDB until ready, and runs lifecycle maintenance only when the database is available
+- `app.js` builds the Express app, enables CORS, parses JSON, serves uploads, exposes `/api/health`, and blocks API requests with a clear `503` while the database is still warming up
 
 ### Middleware
 
@@ -471,6 +499,11 @@ JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 CLIENT_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
 BOOKING_EXPIRY_MINUTES=15
+UPLOADS_DIRECTORY=optional_persistent_uploads_root
+MONGO_RETRY_DELAY_MS=5000
+MONGO_SERVER_SELECTION_TIMEOUT_MS=10000
+PORT=5000
+NODE_ENV=development
 ```
 
 Client:
@@ -478,13 +511,16 @@ Client:
 ```env
 VITE_API_BASE_URL=http://localhost:5000/api
 VITE_SOCKET_SERVER_URL=http://localhost:5000
+VITE_ROUTING_API_BASE_URL=https://router.project-osrm.org
 ```
 
 Notes:
 
 - `CLIENT_ORIGIN` can be a comma-separated list
 - uploads are served from the backend automatically
+- set `UPLOADS_DIRECTORY` to a persistent disk path in production if you do not want uploads stored inside the repo directory
 - if `VITE_SOCKET_SERVER_URL` is not set, the client derives it from `VITE_API_BASE_URL`
+- if `VITE_ROUTING_API_BASE_URL` is not set, the client uses the public OSRM endpoint by default
 
 ## Installation
 
@@ -534,9 +570,16 @@ npm --prefix server install
 - Client: `http://localhost:5173`
 - Server: `http://localhost:5000`
 - API Base: `http://localhost:5000/api`
+- Health: `http://localhost:5000/api/health`
 - Uploads: `http://localhost:5000/uploads/...`
 
 ## API Overview
+
+### Health Route
+
+| Method | Route | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/health` | Public | Report service and database readiness |
 
 ### Auth Routes
 
@@ -622,7 +665,7 @@ npm --prefix server install
 2. Filter by location, price, and optional time window.
 3. Search results and map update together.
 4. Optionally enable browser location.
-5. Sort by nearest parking.
+5. Sort by nearest parking using road distance when routing is available.
 6. Select time range and spot preference.
 7. Create a booking.
 8. Review booking state from `My Bookings`.
@@ -719,9 +762,9 @@ Suggested local test sequence:
 ## Known Notes
 
 - the map uses OpenStreetMap, so no external maps API key is required
-- route guidance on the map is currently a visual straight-line preview, not turn-by-turn navigation
-- uploaded images are stored locally on disk, not in Cloudinary or S3
-- Vite may show a bundle-size warning during build, but the client still builds successfully
+- road routing uses the configured OSRM endpoint and falls back to approximate distance if the routing service is unavailable
+- uploaded images are stored on disk unless you point `UPLOADS_DIRECTORY` at a persistent location
+- the map shows route previews and travel estimates, not full turn-by-turn navigation
 - `server/uploads` is intentionally ignored from git
 
 ## Future Directions
@@ -731,6 +774,6 @@ Good next improvements from here:
 - cloud image storage
 - notifications and reminders
 - dynamic pricing
-- richer route guidance
+- richer turn-by-turn navigation
 - more backend test coverage
-- chunk splitting on the client build
+- frontend end-to-end coverage

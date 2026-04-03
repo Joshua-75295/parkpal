@@ -1,33 +1,32 @@
 import BookingForm from "./BookingForm.jsx";
 import {
-  formatDistanceAway,
+  formatTravelSummary,
   getParkingPreviewImageUrl,
 } from "../services/parkingService.js";
 import { PARKING_SPOT_TYPE_LABELS } from "../utils/constants.js";
 
 const cardStyle = {
-  borderRadius: "24px",
+  display: "grid",
+  gap: "14px",
+  height: "100%",
+  borderRadius: "20px",
   border: "1px solid rgba(16, 42, 67, 0.08)",
   background: "#ffffff",
-  padding: "22px",
-  boxShadow: "0 18px 40px rgba(16, 42, 67, 0.08)",
+  padding: "16px",
+  boxShadow: "0 16px 32px rgba(16, 42, 67, 0.08)",
   transition: "transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease",
 };
 
 const topRowStyle = {
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: "16px",
-  flexWrap: "wrap",
+  display: "grid",
+  gap: "12px",
 };
 
 const mediaStyle = {
   width: "100%",
-  height: "210px",
+  height: "168px",
   objectFit: "cover",
-  borderRadius: "18px",
-  marginBottom: "18px",
+  borderRadius: "16px",
   background:
     "linear-gradient(135deg, rgba(20, 184, 166, 0.14), rgba(59, 130, 246, 0.14))",
 };
@@ -36,27 +35,29 @@ const badgeStyle = {
   display: "inline-flex",
   alignItems: "center",
   borderRadius: "999px",
-  padding: "6px 12px",
+  padding: "5px 10px",
   background: "rgba(15, 118, 110, 0.12)",
   color: "#0f766e",
   fontWeight: 700,
-  fontSize: "0.85rem",
+  fontSize: "0.78rem",
 };
 
 const titleStyle = {
-  margin: "10px 0 8px",
-  fontSize: "1.2rem",
+  margin: 0,
+  fontSize: "1.1rem",
   color: "#102a43",
 };
 
 const textStyle = {
-  margin: "6px 0",
+  margin: 0,
   color: "#486581",
+  fontSize: "0.95rem",
+  lineHeight: 1.55,
 };
 
 const priceStyle = {
   color: "#134e4a",
-  fontSize: "1.4rem",
+  fontSize: "1.2rem",
   fontWeight: 800,
   whiteSpace: "nowrap",
 };
@@ -64,22 +65,43 @@ const priceStyle = {
 const mapButtonStyle = (isSelected) => ({
   border: "1px solid rgba(15, 118, 110, 0.18)",
   borderRadius: "999px",
-  padding: "9px 12px",
+  padding: "8px 12px",
   background: isSelected ? "rgba(15, 118, 110, 0.12)" : "#ffffff",
   color: "#0f766e",
   fontWeight: 700,
+  fontSize: "0.9rem",
   cursor: "pointer",
 });
 
 const favoriteButtonStyle = (isFavorite) => ({
   border: "1px solid rgba(29, 78, 216, 0.18)",
   borderRadius: "999px",
-  padding: "9px 12px",
+  padding: "8px 12px",
   background: isFavorite ? "rgba(29, 78, 216, 0.12)" : "#ffffff",
   color: "#1d4ed8",
   fontWeight: 700,
+  fontSize: "0.9rem",
   cursor: "pointer",
 });
+
+const headerRowStyle = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: "10px",
+  flexWrap: "wrap",
+};
+
+const detailsStyle = {
+  display: "grid",
+  gap: "6px",
+};
+
+const actionRowStyle = {
+  display: "flex",
+  gap: "8px",
+  flexWrap: "wrap",
+};
 
 const getLocationText = (location) =>
   typeof location === "string" ? location : location?.address ?? "Location unavailable";
@@ -141,7 +163,7 @@ function ParkingSlotCard({
           ? "1px solid rgba(15, 118, 110, 0.3)"
           : cardStyle.border,
         boxShadow: isSelected
-          ? "0 22px 48px rgba(15, 118, 110, 0.12)"
+          ? "0 20px 38px rgba(15, 118, 110, 0.12)"
           : cardStyle.boxShadow,
       }}
     >
@@ -152,21 +174,29 @@ function ParkingSlotCard({
       />
 
       <div style={topRowStyle}>
-        <div>
+        <div style={headerRowStyle}>
           <span style={badgeStyle}>{availableLabel}</span>
+          <div style={priceStyle}>Rs. {slot.pricePerHour}/hour</div>
+        </div>
+
+        <div style={detailsStyle}>
           <h3 style={titleStyle}>{slot.title}</h3>
           <p style={textStyle}>{getLocationText(slot.location)}</p>
           {slot.distanceFromUserKm != null ? (
-            <p style={textStyle}>Approx. {formatDistanceAway(slot.distanceFromUserKm)}</p>
+            <p style={textStyle}>
+              {slot.distanceMethod === "road" ? "Drive: " : "Approx. "}
+              {formatTravelSummary(
+                slot.distanceFromUserKm,
+                slot.travelDurationMinutes,
+                slot.distanceMethod
+              )}
+            </p>
           ) : null}
-          <p style={textStyle}>
-            Owner: {slot.owner?.name ?? "ParkPal Host"}
-          </p>
+          <p style={textStyle}>Owner: {slot.owner?.name ?? "ParkPal Host"}</p>
           {spotMixLabel ? <p style={textStyle}>{spotMixLabel}</p> : null}
         </div>
 
-        <div style={{ display: "grid", gap: "10px", justifyItems: "end" }}>
-          <div style={priceStyle}>Rs. {slot.pricePerHour}/hour</div>
+        <div style={actionRowStyle}>
           {onToggleFavorite ? (
             <button
               onClick={() => onToggleFavorite(slot._id)}

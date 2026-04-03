@@ -1,13 +1,11 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
+import {
+  getParkingUploadDirectory,
+  getParkingUploadPublicPrefix,
+} from "../config/storage.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const PARKING_UPLOAD_DIRECTORY = path.resolve(__dirname, "../uploads/parking");
-const PARKING_UPLOAD_PUBLIC_PREFIX = "/uploads/parking/";
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const MIME_TYPE_TO_EXTENSION = Object.freeze({
@@ -24,12 +22,12 @@ const PARKING_IMAGE_DATA_URI_PATTERN =
 const normalizeBase64Payload = (payload) => payload.replace(/\s+/g, "");
 
 const ensureParkingUploadDirectory = async () => {
-  await fs.mkdir(PARKING_UPLOAD_DIRECTORY, { recursive: true });
+  await fs.mkdir(getParkingUploadDirectory(), { recursive: true });
 };
 
 export const isManagedParkingImageUrl = (imageUrl = "") =>
   typeof imageUrl === "string" &&
-  imageUrl.startsWith(PARKING_UPLOAD_PUBLIC_PREFIX);
+  imageUrl.startsWith(getParkingUploadPublicPrefix());
 
 export const saveParkingImageFromDataUri = async (imageData) => {
   if (!imageData) {
@@ -62,11 +60,11 @@ export const saveParkingImageFromDataUri = async (imageData) => {
   await ensureParkingUploadDirectory();
 
   const fileName = `${Date.now()}-${crypto.randomUUID()}.${extension}`;
-  const filePath = path.join(PARKING_UPLOAD_DIRECTORY, fileName);
+  const filePath = path.join(getParkingUploadDirectory(), fileName);
 
   await fs.writeFile(filePath, imageBuffer);
 
-  return `${PARKING_UPLOAD_PUBLIC_PREFIX}${fileName}`;
+  return `${getParkingUploadPublicPrefix()}${fileName}`;
 };
 
 export const deleteManagedParkingImage = async (imageUrl) => {
@@ -77,9 +75,10 @@ export const deleteManagedParkingImage = async (imageUrl) => {
   await ensureParkingUploadDirectory();
 
   const fileName = path.basename(imageUrl);
-  const filePath = path.join(PARKING_UPLOAD_DIRECTORY, fileName);
+  const parkingUploadDirectory = getParkingUploadDirectory();
+  const filePath = path.join(parkingUploadDirectory, fileName);
   const normalizedTargetPath = path.normalize(filePath);
-  const normalizedUploadDirectory = path.normalize(PARKING_UPLOAD_DIRECTORY);
+  const normalizedUploadDirectory = path.normalize(parkingUploadDirectory);
 
   if (!normalizedTargetPath.startsWith(normalizedUploadDirectory)) {
     return;
@@ -93,4 +92,3 @@ export const deleteManagedParkingImage = async (imageUrl) => {
     }
   }
 };
-

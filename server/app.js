@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
+import { getDatabaseHealth, isDatabaseReady } from "./config/db.js";
+import { getUploadsDirectory } from "./config/storage.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
@@ -11,10 +11,8 @@ import {
   notFoundHandler,
 } from "./middleware/errorMiddleware.js";
 import { apiRateLimiter } from "./middleware/rateLimitMiddleware.js";
+import { createHttpError } from "./utils/httpError.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadsDirectory = path.resolve(__dirname, "uploads");
 const MAX_JSON_BODY_SIZE = "8mb";
 
 export const getAllowedOrigins = () =>
@@ -26,8 +24,18 @@ export const getAllowedOrigins = () =>
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-export const createApp = (allowedOrigins = getAllowedOrigins()) => {
+const defaultAppDependencies = {
+  getDatabaseHealth,
+  getUploadsDirectory,
+  isDatabaseReady,
+};
+
+export const createApp = (
+  allowedOrigins = getAllowedOrigins(),
+  dependencies = defaultAppDependencies
+) => {
   const app = express();
+  const uploadsDirectory = dependencies.getUploadsDirectory();
 
   app.use(express.json({ limit: MAX_JSON_BODY_SIZE }));
   app.use(
@@ -48,8 +56,38 @@ export const createApp = (allowedOrigins = getAllowedOrigins()) => {
       },
     })
   );
-  app.use("/api", apiRateLimiter);
   app.use("/uploads", express.static(uploadsDirectory));
+
+  app.get("/api/health", (_req, res) => {
+    const database = dependencies.getDatabaseHealth();
+    const serviceReady = dependencies.isDatabaseReady();
+
+    return res.status(serviceReady ? 200 : 503).json({
+      database,
+      service: {
+        status: serviceReady ? "ok" : "degraded",
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  app.use("/api", apiRateLimiter);
+  app.use("/api", (_req, _res, next) => {
+    if (dependencies.isDatabaseReady()) {
+      return next();
+    }
+
+    return next(
+      createHttpError(
+        503,
+        "The service is starting up and the database is not ready yet. Please try again shortly.",
+        {
+          code: "DATABASE_UNAVAILABLE",
+          details: dependencies.getDatabaseHealth(),
+        }
+      )
+    );
+  });
 
   app.use("/api/auth", authRoutes);
   app.use("/api/admin", adminRoutes);

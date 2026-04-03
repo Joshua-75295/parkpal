@@ -3,38 +3,42 @@ import { BOOKING_SPOT_PREFERENCE_LABELS } from "../utils/constants.js";
 
 const formStyle = {
   display: "grid",
-  gap: "14px",
-  marginTop: "18px",
+  gap: "12px",
+  marginTop: "14px",
 };
 
 const inputGridStyle = {
   display: "grid",
-  gap: "12px",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "10px",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
 };
 
 const labelStyle = {
   display: "grid",
-  gap: "8px",
+  gap: "6px",
+  minWidth: 0,
   color: "#334e68",
   fontWeight: 600,
-  fontSize: "0.95rem",
+  fontSize: "0.88rem",
 };
 
 const inputStyle = {
+  width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
   border: "1px solid #bcccdc",
-  borderRadius: "12px",
-  padding: "12px 14px",
-  fontSize: "0.95rem",
+  borderRadius: "10px",
+  padding: "10px 12px",
+  fontSize: "0.92rem",
   background: "#f8fbfd",
 };
 
 const buttonStyle = {
   border: "none",
-  borderRadius: "12px",
+  borderRadius: "10px",
   background: "#0f766e",
   color: "#ffffff",
-  padding: "12px 16px",
+  padding: "11px 14px",
   fontWeight: 700,
   cursor: "pointer",
 };
@@ -72,7 +76,12 @@ function BookingForm({ isSubmitting, onChange, onSubmit, value }) {
           />
         </label>
 
-        <label style={labelStyle}>
+        <label
+          style={{
+            ...labelStyle,
+            gridColumn: "1 / -1",
+          }}
+        >
           Spot preference
           <select
             onChange={(event) => onChange("spotPreference", event.target.value)}
