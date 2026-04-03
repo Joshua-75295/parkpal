@@ -151,11 +151,14 @@ These credentials are intentionally for local testing and demo data only. Do not
 - Create, edit, and delete owned parking slots
 - Upload real slot images from the admin console
 - Optionally use external image URLs
+- Auto-fill slot map coordinates from browser or device location settings
+- Drop a fallback admin map pin manually when device location is blocked
 - Mark slots as `active`, `maintenance`, or `inactive`
 - Configure spot mix:
   - accessible spots
   - VIP spots
   - standard spots
+- Manage inventory from a more compact responsive card grid with quick map focus, edit, and remove actions
 - Monitor bookings for a selected day
 - Validate customer arrivals
 - View booking analytics:
@@ -790,7 +793,7 @@ Suggested local test sequence:
 2. Promote it to `super_admin` in MongoDB
 3. Login as super admin
 4. Create `admin@parkpal.com`
-5. Login as admin and create a slot with coordinates and an uploaded image
+5. Login as admin, use current location in the slot form, and create a slot with an uploaded image
 6. Register `user1@parkpal.com`
 7. Login as user and create a booking
 8. Save that slot to favorites
@@ -801,6 +804,8 @@ Suggested local test sequence:
 
 - without Google keys, the app still works and falls back to OpenStreetMap plus OSRM routing
 - with only `VITE_GOOGLE_MAPS_API_KEY` configured, the map can render on Google Maps but ETA ranking still falls back to non-Google routing until `GOOGLE_MAPS_API_KEY` is set on the server
+- if geolocation permission is already granted, the admin slot form auto-fills the current map pin and still lets you refresh it manually
+- if device location is blocked even after browser permission is granted, admins can click the inventory map to place the slot pin manually
 - uploaded images are stored on disk unless you point `UPLOADS_DIRECTORY` at a persistent location
 - the map shows route previews and travel estimates, not full turn-by-turn navigation
 - `server/uploads` is intentionally ignored from git

@@ -8,6 +8,7 @@ import {
   TileLayer,
   Tooltip,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import {
   DEFAULT_MAP_CENTER,
@@ -110,7 +111,13 @@ const googleMapErrorStyle = {
   padding: "14px",
 };
 
-function SyncMapView({ points, routeCoordinates, selectedSlotId, userLocation }) {
+function SyncMapView({
+  pickedLocation,
+  points,
+  routeCoordinates,
+  selectedSlotId,
+  userLocation,
+}) {
   const map = useMap();
 
   useEffect(() => {
@@ -121,7 +128,14 @@ function SyncMapView({ points, routeCoordinates, selectedSlotId, userLocation })
       return;
     }
 
-    if (!points.length && !userLocation) {
+    const pickedPoint =
+      pickedLocation &&
+      Number.isFinite(Number(pickedLocation.lat)) &&
+      Number.isFinite(Number(pickedLocation.lng))
+        ? [Number(pickedLocation.lat), Number(pickedLocation.lng)]
+        : null;
+
+    if (!points.length && !userLocation && !pickedPoint) {
       map.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
       return;
     }
@@ -144,6 +158,13 @@ function SyncMapView({ points, routeCoordinates, selectedSlotId, userLocation })
       return;
     }
 
+    if (pickedPoint && selectedPoint) {
+      const bounds = latLngBounds([pickedPoint, [selectedPoint.lat, selectedPoint.lng]]);
+
+      map.fitBounds(bounds, { padding: [44, 44], maxZoom: 14 });
+      return;
+    }
+
     if (selectedPoint) {
       map.flyTo([selectedPoint.lat, selectedPoint.lng], 15, {
         duration: 0.9,
@@ -158,16 +179,38 @@ function SyncMapView({ points, routeCoordinates, selectedSlotId, userLocation })
       return;
     }
 
+    if (pickedPoint) {
+      map.flyTo(pickedPoint, 15, {
+        duration: 0.9,
+      });
+      return;
+    }
+
     const bounds = latLngBounds(points.map((point) => [point.lat, point.lng]));
 
     map.fitBounds(bounds, { padding: [36, 36], maxZoom: 13 });
-  }, [map, points, routeCoordinates, selectedSlotId, userLocation]);
+  }, [map, pickedLocation, points, routeCoordinates, selectedSlotId, userLocation]);
+
+  return null;
+}
+
+function LeafletMapPickListener({ onMapPick }) {
+  useMapEvents({
+    click: (event) => {
+      onMapPick?.({
+        lat: event.latlng.lat,
+        lng: event.latlng.lng,
+      });
+    },
+  });
 
   return null;
 }
 
 function LeafletParkingMap({
+  onMapPick,
   onSelect,
+  pickedLocation,
   points,
   routeDetails,
   selectedSlotId,
@@ -189,11 +232,13 @@ function LeafletParkingMap({
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <SyncMapView
+        pickedLocation={pickedLocation}
         points={points}
         routeCoordinates={routeCoordinates}
         selectedSlotId={selectedSlotId}
         userLocation={userLocation}
       />
+      {onMapPick ? <LeafletMapPickListener onMapPick={onMapPick} /> : null}
 
       {userLocation ? (
         <CircleMarker
@@ -211,6 +256,30 @@ function LeafletParkingMap({
           </Tooltip>
           <Popup>
             <strong>You are here</strong>
+          </Popup>
+        </CircleMarker>
+      ) : null}
+
+      {pickedLocation &&
+      Number.isFinite(Number(pickedLocation.lat)) &&
+      Number.isFinite(Number(pickedLocation.lng)) ? (
+        <CircleMarker
+          center={[Number(pickedLocation.lat), Number(pickedLocation.lng)]}
+          pathOptions={{
+            color: "#7c3aed",
+            fillColor: "#a78bfa",
+            fillOpacity: 0.9,
+            weight: 2,
+          }}
+          radius={9}
+        >
+          <Tooltip direction="top" offset={[0, -6]}>
+            Selected admin pin
+          </Tooltip>
+          <Popup>
+            <strong>Selected admin pin</strong>
+            <br />
+            {Number(pickedLocation.lat).toFixed(5)}, {Number(pickedLocation.lng).toFixed(5)}
           </Popup>
         </CircleMarker>
       ) : null}
@@ -274,7 +343,9 @@ function LeafletParkingMap({
 
 function GoogleParkingMap({
   activeRouteId,
+  onMapPick,
   onSelect,
+  pickedLocation,
   points,
   routeOptions,
   selectedSlotId,
@@ -284,6 +355,7 @@ function GoogleParkingMap({
   const infoWindowRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
+  const pickedMarkerRef = useRef(null);
   const polylinesRef = useRef([]);
   const [loadError, setLoadError] = useState("");
 
@@ -336,6 +408,9 @@ function GoogleParkingMap({
     polylinesRef.current.forEach((polyline) => polyline.setMap(null));
     markersRef.current = [];
     polylinesRef.current = [];
+    pickedMarkerRef.current?.setMap(null);
+    pickedMarkerRef.current = null;
+    google.maps.event.clearListeners(map, "click");
 
     const bounds = new google.maps.LatLngBounds();
     const activeRoute =
@@ -363,6 +438,32 @@ function GoogleParkingMap({
           title: "Your location",
         })
       );
+    }
+
+    if (
+      pickedLocation &&
+      Number.isFinite(Number(pickedLocation.lat)) &&
+      Number.isFinite(Number(pickedLocation.lng))
+    ) {
+      const pickedPosition = {
+        lat: Number(pickedLocation.lat),
+        lng: Number(pickedLocation.lng),
+      };
+
+      bounds.extend(pickedPosition);
+      pickedMarkerRef.current = new google.maps.Marker({
+        icon: {
+          fillColor: "#8b5cf6",
+          fillOpacity: 1,
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 7,
+          strokeColor: "#ddd6fe",
+          strokeWeight: 3,
+        },
+        map,
+        position: pickedPosition,
+        title: "Selected admin pin",
+      });
     }
 
     points.forEach((slot) => {
@@ -427,6 +528,22 @@ function GoogleParkingMap({
       route.coordinates.forEach((point) => bounds.extend(point));
     });
 
+    if (onMapPick) {
+      map.addListener("click", (event) => {
+        const latitude = event.latLng?.lat();
+        const longitude = event.latLng?.lng();
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          return;
+        }
+
+        onMapPick({
+          lat: latitude,
+          lng: longitude,
+        });
+      });
+    }
+
     if (!bounds.isEmpty()) {
       map.fitBounds(bounds, 48);
       return;
@@ -437,7 +554,16 @@ function GoogleParkingMap({
       lng: DEFAULT_MAP_CENTER[1],
     });
     map.setZoom(DEFAULT_MAP_ZOOM);
-  }, [activeRouteId, onSelect, points, routeOptions, selectedSlotId, userLocation]);
+  }, [
+    activeRouteId,
+    onMapPick,
+    onSelect,
+    pickedLocation,
+    points,
+    routeOptions,
+    selectedSlotId,
+    userLocation,
+  ]);
 
   if (loadError) {
     return <div style={googleMapErrorStyle}>{loadError}</div>;
@@ -450,8 +576,10 @@ function ParkingMap({
   activeRouteId = "",
   emptyLabel = "Parking locations with map coordinates will appear here.",
   isRouting = false,
+  onMapPick,
   onRouteSelect,
   onSelect,
+  pickedLocation = null,
   routeOptions = [],
   routingProvider = "leaflet",
   selectedSlotId,
@@ -495,6 +623,12 @@ function ParkingMap({
           <p style={{ margin: 0, color: "#486581", lineHeight: 1.6 }}>
             {subtitle}
           </p>
+          {onMapPick ? (
+            <p style={{ margin: "8px 0 0", color: "#7c3aed", lineHeight: 1.6 }}>
+              Click open map space to drop a fallback admin pin when device
+              location is unavailable.
+            </p>
+          ) : null}
           {userLocation && points.length ? (
             <p style={{ margin: "8px 0 0", color: "#0f766e", lineHeight: 1.6 }}>
               {isRouting
@@ -549,7 +683,7 @@ function ParkingMap({
         </div>
       ) : null}
 
-      {points.length === 0 && !userLocation ? (
+      {points.length === 0 && !userLocation && !pickedLocation && !onMapPick ? (
         <div style={{ display: "grid", gap: "10px" }}>
           <p style={{ margin: 0, color: "#486581" }}>{emptyLabel}</p>
           <p style={{ margin: 0, color: "#829ab1" }}>
@@ -560,7 +694,9 @@ function ParkingMap({
       ) : routingProvider === "google" ? (
         <GoogleParkingMap
           activeRouteId={activeRouteId}
+          onMapPick={onMapPick}
           onSelect={onSelect}
+          pickedLocation={pickedLocation}
           points={points}
           routeOptions={routeOptions}
           selectedSlotId={selectedSlotId}
@@ -568,7 +704,9 @@ function ParkingMap({
         />
       ) : (
         <LeafletParkingMap
+          onMapPick={onMapPick}
           onSelect={onSelect}
+          pickedLocation={pickedLocation}
           points={points}
           routeDetails={activeRoute}
           selectedSlotId={selectedSlotId}

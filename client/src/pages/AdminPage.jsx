@@ -18,6 +18,7 @@ import {
   getLocationText,
   getManagedParkingSlots,
   readImageFileAsDataUrl,
+  requestBrowserLocation,
   updateParkingSlot,
 } from "../services/parkingService.js";
 import {
@@ -215,12 +216,56 @@ const styles = {
   list: {
     display: "grid",
     gap: "14px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   },
   listCard: {
     borderRadius: "20px",
     border: "1px solid rgba(16, 42, 67, 0.08)",
     background: "#f8fbfd",
     padding: "16px",
+  },
+  locationCard: {
+    display: "grid",
+    gap: "14px",
+    alignItems: "center",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  },
+  locationSummary: {
+    display: "grid",
+    gap: "8px",
+  },
+  locationValue: {
+    margin: 0,
+    color: "#102a43",
+    fontSize: "1rem",
+    fontWeight: 700,
+  },
+  locationHint: {
+    margin: 0,
+    color: "#486581",
+    lineHeight: 1.6,
+  },
+  locationActions: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  locationMetaRow: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
+  locationMetaPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: "rgba(15, 118, 110, 0.08)",
+    color: "#0f766e",
+    fontWeight: 700,
+    fontSize: "0.88rem",
   },
   badgeRow: {
     display: "flex",
@@ -263,6 +308,114 @@ const styles = {
     borderRadius: "999px",
     background: "rgba(148, 163, 184, 0.18)",
     overflow: "hidden",
+  },
+  inventoryGrid: {
+    display: "grid",
+    gap: "16px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+  },
+  inventoryCard: {
+    borderRadius: "20px",
+    border: "1px solid rgba(16, 42, 67, 0.08)",
+    background: "#f8fbfd",
+    padding: "16px",
+    display: "grid",
+    gap: "14px",
+    alignContent: "start",
+  },
+  inventoryHero: {
+    display: "grid",
+    gap: "12px",
+    justifyItems: "center",
+  },
+  inventoryContent: {
+    display: "grid",
+    gap: "12px",
+    minWidth: 0,
+  },
+  inventoryHeader: {
+    display: "grid",
+    gap: "8px",
+    textAlign: "center",
+  },
+  inventoryMetaGrid: {
+    display: "grid",
+    gap: "10px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+  },
+  inventoryMetaCard: {
+    display: "grid",
+    gap: "4px",
+    padding: "10px 12px",
+    borderRadius: "16px",
+    background: "#ffffff",
+    border: "1px solid rgba(16, 42, 67, 0.06)",
+  },
+  inventoryMetaLabel: {
+    color: "#627d98",
+    fontSize: "0.8rem",
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+  inventoryMetaValue: {
+    color: "#102a43",
+    fontWeight: 700,
+    lineHeight: 1.4,
+  },
+  inventoryActions: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  inventoryImage: {
+    width: "100%",
+    maxWidth: "260px",
+    height: "148px",
+    objectFit: "cover",
+    borderRadius: "16px",
+    background:
+      "linear-gradient(135deg, rgba(20, 184, 166, 0.14), rgba(59, 130, 246, 0.14))",
+  },
+  adminManagementGrid: {
+    display: "grid",
+    gap: "18px",
+  },
+  adminPanel: {
+    borderRadius: "20px",
+    border: "1px solid rgba(16, 42, 67, 0.08)",
+    background: "#f8fbfd",
+    padding: "18px",
+    display: "grid",
+    gap: "16px",
+  },
+  adminListGrid: {
+    display: "grid",
+    gap: "14px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  },
+  adminCard: {
+    borderRadius: "18px",
+    border: "1px solid rgba(16, 42, 67, 0.08)",
+    background: "#ffffff",
+    padding: "16px",
+    display: "grid",
+    gap: "10px",
+    justifyItems: "center",
+    textAlign: "center",
+    alignContent: "start",
+  },
+  adminAvatar: {
+    width: "56px",
+    height: "56px",
+    borderRadius: "50%",
+    display: "grid",
+    placeItems: "center",
+    background: "linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(59, 130, 246, 0.18))",
+    color: "#134e4a",
+    fontWeight: 800,
+    fontSize: "1rem",
   },
 };
 
@@ -371,6 +524,37 @@ const formatSpotMix = (spotMix) =>
     )
     .join(" • ");
 
+const formatCoordinateValue = (value) => {
+  const normalizedValue = Number(value);
+
+  if (!Number.isFinite(normalizedValue)) {
+    return "--";
+  }
+
+  return normalizedValue.toFixed(5);
+};
+
+const formatSpotMixSummary = (spotMix) => {
+  const formattedSpotMix = Object.entries(spotMix)
+    .filter(([, count]) => Number(count) > 0)
+    .map(
+      ([spotType, count]) =>
+        `${count} ${PARKING_SPOT_TYPE_LABELS[spotType] ?? spotType}`
+    )
+    .join(" | ");
+
+  return formattedSpotMix || formatSpotMix(spotMix);
+};
+
+const getInitials = (value) =>
+  String(value ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "PP";
+
 function AdminPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
@@ -393,6 +577,7 @@ function AdminPage() {
   const [isLoadingAdmins, setIsLoadingAdmins] = useState(isSuperAdmin);
   const [isSavingSlot, setIsSavingSlot] = useState(false);
   const [isSavingAdmin, setIsSavingAdmin] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [activeDeleteId, setActiveDeleteId] = useState("");
   const [activeValidateId, setActiveValidateId] = useState("");
   const [editingSlotId, setEditingSlotId] = useState("");
@@ -496,6 +681,58 @@ function AdminPage() {
   useEffect(() => {
     loadAdmins();
   }, [loadAdmins]);
+
+  useEffect(() => {
+    if (
+      editingSlotId ||
+      parkingForm.lat ||
+      parkingForm.lng ||
+      typeof navigator === "undefined" ||
+      !navigator.permissions?.query
+    ) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    const syncGrantedLocation = async () => {
+      try {
+        const permissionStatus = await navigator.permissions.query({
+          name: "geolocation",
+        });
+
+        if (permissionStatus.state !== "granted" || isCancelled) {
+          return;
+        }
+
+        const location = await requestBrowserLocation();
+
+        if (isCancelled) {
+          return;
+        }
+
+        setParkingForm((current) => {
+          if (current.lat || current.lng) {
+            return current;
+          }
+
+          return {
+            ...current,
+            lat: location.lat.toFixed(6),
+            lng: location.lng.toFixed(6),
+          };
+        });
+      } catch {
+        return;
+      }
+    };
+
+    syncGrantedLocation();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [editingSlotId, parkingForm.lat, parkingForm.lng]);
 
   useEffect(() => {
     const unsubscribeInventory = subscribeToRealtimeEvent(
@@ -611,6 +848,31 @@ function AdminPage() {
     [analytics.cancellationTrend]
   );
 
+  const parkingCoordinateSummary = useMemo(() => {
+    const latitude = Number(parkingForm.lat);
+    const longitude = Number(parkingForm.lng);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return "Current location not added yet";
+    }
+
+    return `${formatCoordinateValue(latitude)}, ${formatCoordinateValue(longitude)}`;
+  }, [parkingForm.lat, parkingForm.lng]);
+
+  const parkingMapPickLocation = useMemo(() => {
+    const latitude = Number(parkingForm.lat);
+    const longitude = Number(parkingForm.lng);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return null;
+    }
+
+    return {
+      lat: latitude,
+      lng: longitude,
+    };
+  }, [parkingForm.lat, parkingForm.lng]);
+
   const handleParkingInputChange = (event) => {
     setParkingForm((current) => ({
       ...current,
@@ -666,6 +928,60 @@ function AdminPage() {
     setParkingImageInputKey((currentKey) => currentKey + 1);
   };
 
+  const handleUseCurrentLocation = async () => {
+    setIsDetectingLocation(true);
+
+    try {
+      const location = await requestBrowserLocation();
+
+      setParkingForm((current) => ({
+        ...current,
+        lat: location.lat.toFixed(6),
+        lng: location.lng.toFixed(6),
+      }));
+      setToast({
+        type: "success",
+        title: "Location synced",
+        message: "The slot coordinates were updated from your device location.",
+      });
+    } catch (requestError) {
+      setToast({
+        type: "error",
+        title: "Location unavailable",
+        message:
+          requestError?.message ??
+          "Could not read your current device location.",
+      });
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  };
+
+  const handleClearParkingLocation = () => {
+    setParkingForm((current) => ({
+      ...current,
+      lat: "",
+      lng: "",
+    }));
+  };
+
+  const handleMapPickLocation = ({ lat, lng }) => {
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+      return;
+    }
+
+    setParkingForm((current) => ({
+      ...current,
+      lat: Number(lat).toFixed(6),
+      lng: Number(lng).toFixed(6),
+    }));
+    setToast({
+      type: "success",
+      title: "Map pin updated",
+      message: "The slot coordinates were set from the admin map.",
+    });
+  };
+
   const handleEditSlot = (slot) => {
     setParkingForm(getParkingFormFromSlot(slot));
     setEditingSlotId(slot._id);
@@ -675,6 +991,19 @@ function AdminPage() {
 
   const handleSaveSlot = async (event) => {
     event.preventDefault();
+    const latitude = Number(parkingForm.lat);
+    const longitude = Number(parkingForm.lng);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setToast({
+        type: "error",
+        title: "Location required",
+        message:
+          "Turn on location services and use the current-location button before saving the slot.",
+      });
+      return;
+    }
+
     setIsSavingSlot(true);
 
     try {
@@ -1054,8 +1383,8 @@ function AdminPage() {
         )}
       </section>
 
-      <div style={styles.grid}>
-        <div style={styles.column}>
+      <div style={styles.column}>
+        <div style={styles.grid}>
           <section style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
@@ -1063,7 +1392,7 @@ function AdminPage() {
                   {editingSlotId ? "Edit Parking Slot" : "Add Parking Slot"}
                 </h2>
                 <p style={{ margin: 0, color: "#486581", lineHeight: 1.6 }}>
-                  Add images, set the location, choose VIP or accessible spot counts, and mark damaged slots as maintenance.
+                  Add images, sync the map pin from your current location, choose VIP or accessible spot counts, and mark damaged slots as maintenance.
                 </p>
               </div>
               {editingSlotId ? (
@@ -1158,34 +1487,55 @@ function AdminPage() {
                     value={parkingForm.imageUrl}
                   />
                 </label>
-                <label style={styles.label}>
-                  Latitude
-                  <input
-                    max="90"
-                    min="-90"
-                    name="lat"
-                    onChange={handleParkingInputChange}
-                    required
-                    step="any"
-                    style={styles.input}
-                    type="number"
-                    value={parkingForm.lat}
-                  />
-                </label>
-                <label style={styles.label}>
-                  Longitude
-                  <input
-                    max="180"
-                    min="-180"
-                    name="lng"
-                    onChange={handleParkingInputChange}
-                    required
-                    step="any"
-                    style={styles.input}
-                    type="number"
-                    value={parkingForm.lng}
-                  />
-                </label>
+                <div
+                  style={{
+                    ...styles.listCard,
+                    ...styles.locationCard,
+                    gridColumn: "1 / -1",
+                  }}
+                >
+                  <div style={styles.locationSummary}>
+                    <span style={styles.inventoryMetaLabel}>Map pin</span>
+                    <p style={styles.locationValue}>{parkingCoordinateSummary}</p>
+                    <p style={styles.locationHint}>
+                      {editingSlotId
+                        ? "Use your current device location to replace the saved map point for this slot, or click the admin map below to drop a manual pin."
+                        : "Turn on browser or device location and pull the slot coordinates in one tap, or click the admin map below if location services are blocked."}
+                    </p>
+                    <div style={styles.locationMetaRow}>
+                      <span style={styles.locationMetaPill}>
+                        {Number.isFinite(Number(parkingForm.lat)) &&
+                        Number.isFinite(Number(parkingForm.lng))
+                          ? "Map-ready coordinates saved"
+                          : "Waiting for current location"}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={styles.locationActions}>
+                    <button
+                      disabled={isDetectingLocation}
+                      onClick={handleUseCurrentLocation}
+                      style={styles.subtleButton}
+                      type="button"
+                    >
+                      {isDetectingLocation
+                        ? "Detecting..."
+                        : Number.isFinite(Number(parkingForm.lat)) &&
+                          Number.isFinite(Number(parkingForm.lng))
+                        ? "Refresh Current Location"
+                        : "Use Current Location"}
+                    </button>
+                    {parkingForm.lat || parkingForm.lng ? (
+                      <button
+                        onClick={handleClearParkingLocation}
+                        style={styles.secondaryButton}
+                        type="button"
+                      >
+                        Clear Location
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <label style={styles.label}>
                   Price per hour
                   <input
@@ -1280,19 +1630,19 @@ function AdminPage() {
 
           <ParkingMap
             emptyLabel="Add a parking slot with valid coordinates to start monitoring the map."
+            onMapPick={handleMapPickLocation}
             onSelect={setSelectedSlotId}
+            pickedLocation={parkingMapPickLocation}
             selectedSlotId={selectedSlotId}
             slots={slots}
             subtitle={
               isSuperAdmin
-                ? "Track how your admins' inventory is spread across the city."
-                : "Track how your managed inventory is spread across the city."
+                ? "Track how your admins' inventory is spread across the city and click the map to drop a fallback slot pin."
+                : "Track how your managed inventory is spread across the city and click the map to drop a fallback slot pin."
             }
             title={isSuperAdmin ? "Platform Inventory Map" : "Managed Inventory Map"}
           />
         </div>
-
-        <div style={styles.column}>
           <section style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
@@ -1462,81 +1812,117 @@ function AdminPage() {
                 You have no parking slots yet. Create one to start taking bookings.
               </p>
             ) : (
-              <div style={styles.list}>
+              <div style={styles.inventoryGrid}>
                 {slots.map((slot) => (
                   <article
                     key={slot._id}
                     style={{
-                      ...styles.listCard,
+                      ...styles.inventoryCard,
                       border:
                         slot._id === editingSlotId
                           ? "1px solid rgba(15, 118, 110, 0.35)"
-                          : styles.listCard.border,
+                          : styles.inventoryCard.border,
                     }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "14px",
-                        alignItems: "flex-start",
-                        flexWrap: "wrap",
-                      }}
-                    >
+                    <div style={styles.inventoryHero}>
                       <img
                         alt={slot.title}
                         src={getParkingPreviewImageUrl(slot)}
-                        style={styles.media}
+                        style={styles.inventoryImage}
                       />
-                      <div style={{ flex: "1 1 240px" }}>
-                        <div style={styles.badgeRow}>
-                          <span style={getBadgeStyle(getParkingTone(slot.status))}>
-                            {PARKING_STATUS_LABELS[slot.status] ?? slot.status}
-                          </span>
-                          <span style={getBadgeStyle("success")}>
-                            {slot.availableSlots ?? 0} configured spots
+                      <div
+                        style={{
+                          ...styles.badgeRow,
+                          justifyContent: "center",
+                          marginBottom: 0,
+                        }}
+                      >
+                        <span style={getBadgeStyle(getParkingTone(slot.status))}>
+                          {PARKING_STATUS_LABELS[slot.status] ?? slot.status}
+                        </span>
+                        <span style={getBadgeStyle("success")}>
+                          {slot.availableSlots ?? 0} configured spots
+                        </span>
+                      </div>
+                    </div>
+                    <div style={styles.inventoryContent}>
+                      <div style={styles.inventoryHeader}>
+                        <h3 style={{ margin: 0, color: "#102a43" }}>{slot.title}</h3>
+                        <p style={{ ...styles.text, margin: 0 }}>
+                          {getLocationText(slot)}
+                        </p>
+                        <p
+                          style={{
+                            margin: 0,
+                            color: "#134e4a",
+                            fontSize: "1.2rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Rs. {slot.pricePerHour}/hour
+                        </p>
+                      </div>
+                      <div style={styles.inventoryActions}>
+                        <button
+                          onClick={() => setSelectedSlotId(slot._id)}
+                          style={styles.subtleButton}
+                          type="button"
+                        >
+                          Focus on Map
+                        </button>
+                        <button
+                          onClick={() => handleEditSlot(slot)}
+                          style={styles.secondaryButton}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          disabled={activeDeleteId === slot._id}
+                          onClick={() => handleDeleteSlot(slot._id)}
+                          style={styles.dangerButton}
+                          type="button"
+                        >
+                          {activeDeleteId === slot._id ? "Removing..." : "Remove"}
+                        </button>
+                      </div>
+                      <div style={styles.inventoryMetaGrid}>
+                        <div style={styles.inventoryMetaCard}>
+                          <span style={styles.inventoryMetaLabel}>Spot Mix</span>
+                          <span style={styles.inventoryMetaValue}>
+                            {formatSpotMixSummary(getConfiguredSpotMix(slot)) ||
+                              "Standard only"}
                           </span>
                         </div>
-                        <h3 style={{ margin: "0 0 8px", color: "#102a43" }}>
-                          {slot.title}
-                        </h3>
-                        <p style={styles.text}>{getLocationText(slot)}</p>
-                        <p style={styles.text}>Price: Rs. {slot.pricePerHour}/hour</p>
-                        <p style={styles.text}>
-                          Spot mix: {formatSpotMix(getConfiguredSpotMix(slot)) || "Standard only"}
-                        </p>
-                        <p style={styles.text}>
-                          Coordinates: {slot.location?.lat ?? "--"}, {slot.location?.lng ?? "--"}
-                        </p>
+                        <div style={styles.inventoryMetaCard}>
+                          <span style={styles.inventoryMetaLabel}>Map Pin</span>
+                          <span style={styles.inventoryMetaValue}>
+                            {formatCoordinateValue(slot.location?.lat)},{" "}
+                            {formatCoordinateValue(slot.location?.lng)}
+                          </span>
+                        </div>
                         {isSuperAdmin ? (
-                          <p style={styles.text}>
-                            Owner: {slot.owner?.name ?? "Unknown admin"}
-                            {slot.owner?.email ? ` | ${slot.owner.email}` : ""}
-                          </p>
-                        ) : null}
-                        <div style={styles.buttons}>
-                          <button
-                            onClick={() => setSelectedSlotId(slot._id)}
-                            style={styles.subtleButton}
-                            type="button"
-                          >
-                            Focus on Map
-                          </button>
-                          <button
-                            onClick={() => handleEditSlot(slot)}
-                            style={styles.secondaryButton}
-                            type="button"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            disabled={activeDeleteId === slot._id}
-                            onClick={() => handleDeleteSlot(slot._id)}
-                            style={styles.dangerButton}
-                            type="button"
-                          >
-                            {activeDeleteId === slot._id ? "Removing..." : "Remove"}
-                          </button>
-                        </div>
+                          <div style={styles.inventoryMetaCard}>
+                            <span style={styles.inventoryMetaLabel}>Owner</span>
+                            <span style={styles.inventoryMetaValue}>
+                              {slot.owner?.name ?? "Unknown admin"}
+                            </span>
+                            {slot.owner?.email ? (
+                              <span style={{ ...styles.text, margin: 0 }}>
+                                {slot.owner.email}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div style={styles.inventoryMetaCard}>
+                            <span style={styles.inventoryMetaLabel}>Preview</span>
+                            <span style={styles.inventoryMetaValue}>
+                              {slot.imageUrl
+                                ? "Custom image ready"
+                                : "Generated preview ready"}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </article>
@@ -1558,93 +1944,124 @@ function AdminPage() {
                 </div>
               </div>
 
-              <form onSubmit={handleCreateAdmin}>
-                <div style={styles.formGrid}>
-                  <label style={styles.label}>
-                    Name
-                    <input
-                      name="name"
-                      onChange={handleAdminInputChange}
-                      required
-                      style={styles.input}
-                      type="text"
-                      value={adminForm.name}
-                    />
-                  </label>
-                  <label style={styles.label}>
-                    Email
-                    <input
-                      name="email"
-                      onChange={handleAdminInputChange}
-                      required
-                      style={styles.input}
-                      type="email"
-                      value={adminForm.email}
-                    />
-                  </label>
-                  <label style={styles.label}>
-                    Password
-                    <input
-                      minLength="6"
-                      name="password"
-                      onChange={handleAdminInputChange}
-                      required
-                      style={styles.input}
-                      type="password"
-                      value={adminForm.password}
-                    />
-                  </label>
-                </div>
-
-                <div style={styles.buttons}>
-                  <button
-                    disabled={isSavingAdmin}
-                    style={styles.primaryButton}
-                    type="submit"
-                  >
-                    {isSavingAdmin ? "Creating..." : "Create Admin"}
-                  </button>
-                  <button
-                    onClick={() => setAdminForm(createAdminForm())}
-                    style={styles.secondaryButton}
-                    type="button"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </form>
-
-              <div style={{ marginTop: "22px" }}>
-                {isLoadingAdmins ? (
-                  <Loader label="Loading admins..." />
-                ) : admins.length === 0 ? (
-                  <p style={styles.text}>No admins have been added yet.</p>
-                ) : (
-                  <div style={styles.list}>
-                    {admins.map((admin) => (
-                      <article key={admin._id ?? admin.id} style={styles.listCard}>
-                        <div style={styles.badgeRow}>
-                          <span
-                            style={getBadgeStyle(
-                              admin.role === "super_admin" ? "warning" : "success"
-                            )}
-                          >
-                            {ROLE_LABELS[admin.role] ?? admin.role}
-                          </span>
-                        </div>
-                        <h3 style={{ margin: "0 0 8px", color: "#102a43" }}>
-                          {admin.name}
-                        </h3>
-                        <p style={styles.text}>{admin.email}</p>
-                        <p style={styles.text}>Added: {formatDateTime(admin.createdAt)}</p>
-                      </article>
-                    ))}
+              <div style={styles.adminManagementGrid}>
+                <article style={styles.adminPanel}>
+                  <div>
+                    <h3 style={{ margin: "0 0 8px", color: "#102a43" }}>
+                      Create Admin
+                    </h3>
+                    <p style={{ margin: 0, color: "#486581", lineHeight: 1.6 }}>
+                      Add a new parking operator without pushing the existing list further down.
+                    </p>
                   </div>
-                )}
+
+                  <form onSubmit={handleCreateAdmin}>
+                    <div style={styles.formGrid}>
+                      <label style={styles.label}>
+                        Name
+                        <input
+                          name="name"
+                          onChange={handleAdminInputChange}
+                          required
+                          style={styles.input}
+                          type="text"
+                          value={adminForm.name}
+                        />
+                      </label>
+                      <label style={styles.label}>
+                        Email
+                        <input
+                          name="email"
+                          onChange={handleAdminInputChange}
+                          required
+                          style={styles.input}
+                          type="email"
+                          value={adminForm.email}
+                        />
+                      </label>
+                      <label style={styles.label}>
+                        Password
+                        <input
+                          minLength="6"
+                          name="password"
+                          onChange={handleAdminInputChange}
+                          required
+                          style={styles.input}
+                          type="password"
+                          value={adminForm.password}
+                        />
+                      </label>
+                    </div>
+
+                    <div style={styles.buttons}>
+                      <button
+                        disabled={isSavingAdmin}
+                        style={styles.primaryButton}
+                        type="submit"
+                      >
+                        {isSavingAdmin ? "Creating..." : "Create Admin"}
+                      </button>
+                      <button
+                        onClick={() => setAdminForm(createAdminForm())}
+                        style={styles.secondaryButton}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </form>
+                </article>
+
+                <article style={styles.adminPanel}>
+                  <div style={styles.sectionHeader}>
+                    <div>
+                      <h3 style={{ margin: "0 0 8px", color: "#102a43" }}>
+                        Active Admins
+                      </h3>
+                      <p style={{ margin: 0, color: "#486581", lineHeight: 1.6 }}>
+                        Browse the platform team in a compact card grid.
+                      </p>
+                    </div>
+                    <span style={getBadgeStyle("success")}>{admins.length} total</span>
+                  </div>
+
+                  {isLoadingAdmins ? (
+                    <Loader label="Loading admins..." />
+                  ) : admins.length === 0 ? (
+                    <p style={styles.text}>No admins have been added yet.</p>
+                  ) : (
+                    <div style={styles.adminListGrid}>
+                      {admins.map((admin) => (
+                        <article key={admin._id ?? admin.id} style={styles.adminCard}>
+                          <div style={styles.adminAvatar}>{getInitials(admin.name)}</div>
+                          <div
+                            style={{
+                              ...styles.badgeRow,
+                              justifyContent: "center",
+                              marginBottom: 0,
+                            }}
+                          >
+                            <span
+                              style={getBadgeStyle(
+                                admin.role === "super_admin" ? "warning" : "success"
+                              )}
+                            >
+                              {ROLE_LABELS[admin.role] ?? admin.role}
+                            </span>
+                          </div>
+                          <h3 style={{ margin: 0, color: "#102a43" }}>{admin.name}</h3>
+                          <p style={{ ...styles.text, margin: 0 }}>{admin.email}</p>
+                          <p style={{ ...styles.text, margin: 0 }}>
+                            Added: {formatDateTime(admin.createdAt)}
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </article>
               </div>
             </section>
           ) : null}
-        </div>
       </div>
     </section>
   );
