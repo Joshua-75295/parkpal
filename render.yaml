@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: parkpal-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: BOOKING_EXPIRY_MINUTES
+        value: "15"
+      - key: MONGO_RETRY_DELAY_MS
+        value: "5000"
+      - key: MONGO_SERVER_SELECTION_TIMEOUT_MS
+        value: "10000"
+      - key: UPLOADS_DIRECTORY
+        value: /opt/render/project/src/uploads
+
+  - type: web
+    name: parkpal-web
+    runtime: static
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
+      - key: VITE_SOCKET_SERVER_URL
+        sync: false
+      - key: VITE_ROUTING_API_BASE_URL
+        value: https://router.project-osrm.org
