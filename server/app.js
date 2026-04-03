@@ -6,6 +6,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import parkingRoutes from "./routes/parkingRoutes.js";
+import routingRoutes from "./routes/routingRoutes.js";
 import {
   errorHandler,
   notFoundHandler,
@@ -93,6 +94,7 @@ export const createApp = (
   app.use("/api/admin", adminRoutes);
   app.use("/api/parking", parkingRoutes);
   app.use("/api/bookings", bookingRoutes);
+  app.use("/api/routing", routingRoutes);
 
   app.get("/", (_req, res) => {
     res.send("ParkPal API running...");

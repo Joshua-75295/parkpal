@@ -82,7 +82,7 @@ const truncatePreviewText = (value, maxLength = 34) => {
     return normalizedValue;
   }
 
-  return `${normalizedValue.slice(0, Math.max(maxLength - 1, 0)).trimEnd()}…`;
+  return `${normalizedValue.slice(0, Math.max(maxLength - 3, 0)).trimEnd()}...`;
 };
 
 const hashPreviewSeed = (value) =>
@@ -115,7 +115,7 @@ const buildSpotSummary = (slot) => {
     summaryParts.push(`${totalSpots} total spots`);
   }
 
-  return summaryParts.join(" • ");
+  return summaryParts.join(" | ");
 };
 
 const buildParkingPreviewDataUrl = (slot = {}) => {
@@ -330,7 +330,10 @@ export const fetchDrivingRoute = async (
 
   return {
     coordinates: Array.isArray(route.geometry?.coordinates)
-      ? route.geometry.coordinates.map(([lng, lat]) => [Number(lat), Number(lng)])
+      ? route.geometry.coordinates.map(([lng, lat]) => ({
+          lat: Number(lat),
+          lng: Number(lng),
+        }))
       : [],
     distanceKm: Number.isFinite(Number(route.distance))
       ? Number((Number(route.distance) / 1000).toFixed(2))
@@ -382,10 +385,30 @@ export const enrichSlotsWithDistance = (
 
 export const sortSlotsByDistance = (slots) =>
   [...slots].sort((leftSlot, rightSlot) => {
+    const leftDuration = Number(leftSlot.travelDurationMinutes);
+    const rightDuration = Number(rightSlot.travelDurationMinutes);
+    const leftHasDuration = Number.isFinite(leftDuration);
+    const rightHasDuration = Number.isFinite(rightDuration);
     const leftDistance = Number(leftSlot.distanceFromUserKm);
     const rightDistance = Number(rightSlot.distanceFromUserKm);
     const leftHasDistance = Number.isFinite(leftDistance);
     const rightHasDistance = Number.isFinite(rightDistance);
+
+    if (leftHasDuration && rightHasDuration) {
+      return (
+        leftDuration - rightDuration ||
+        leftDistance - rightDistance ||
+        leftSlot.pricePerHour - rightSlot.pricePerHour
+      );
+    }
+
+    if (leftHasDuration) {
+      return -1;
+    }
+
+    if (rightHasDuration) {
+      return 1;
+    }
 
     if (leftHasDistance && rightHasDistance) {
       return leftDistance - rightDistance || leftSlot.pricePerHour - rightSlot.pricePerHour;
@@ -466,7 +489,7 @@ export const formatTravelSummary = (
   const durationLabel =
     distanceMethod === "road" ? formatTravelDuration(durationMinutes) : "";
 
-  return [distanceLabel, durationLabel].filter(Boolean).join(" · ");
+  return [durationLabel, distanceLabel].filter(Boolean).join(" | ");
 };
 
 const requestCurrentPosition = (options) =>

@@ -6,7 +6,7 @@ ParkPal is a full-stack parking management and booking platform built for three 
 - `admin`: manage owned inventory, upload slot images, validate arrivals, and monitor daily operations
 - `super_admin`: manage admins, view cross-admin inventory, and monitor analytics across managed slots
 
-The project now goes well beyond a basic CRUD demo. It includes cookie-based auth with refresh tokens, role-aware routing, real-time updates, road-aware map intelligence, booking lifecycle automation, analytics, favorites, quick rebook, responsive search results, and local image upload for parking slots.
+The project now goes well beyond a basic CRUD demo. It includes cookie-based auth with refresh tokens, role-aware routing, real-time updates, Google-style traffic-aware routing when configured, booking lifecycle automation, analytics, favorites, quick rebook, responsive search results, and local image upload for parking slots.
 
 ## Quick Start
 
@@ -53,7 +53,20 @@ Optional client env:
 VITE_API_BASE_URL=http://localhost:5000/api
 VITE_SOCKET_SERVER_URL=http://localhost:5000
 VITE_ROUTING_API_BASE_URL=https://router.project-osrm.org
+VITE_GOOGLE_MAPS_API_KEY=your_browser_restricted_google_maps_key
+VITE_GOOGLE_MAPS_MAP_ID=optional_google_map_id
 ```
+
+Optional server env for Google-style ETA and route alternatives:
+
+```env
+GOOGLE_MAPS_API_KEY=your_server_google_maps_key
+```
+
+To use the Google-style routing experience, enable billing and turn on:
+
+- Maps JavaScript API
+- Routes API
 
 ## Demo Data
 
@@ -119,8 +132,9 @@ These credentials are intentionally for local testing and demo data only. Do not
 
 - Register and login with secure HTTP-only cookie sessions
 - Search parking slots by location, price, and optional live time range
-- View parking inventory on a Leaflet map with OpenStreetMap tiles
-- Use browser location to see road distance, estimated drive time, and sort by nearest parking
+- View parking inventory on OpenStreetMap by default, or Google Maps when configured
+- Use browser location to see road distance, estimated drive time, and sort by the best parking route
+- Compare alternate route chips with Google-style ETA when Google routing is configured
 - Browse results in a compact map-first responsive grid instead of one long mobile-heavy column
 - Create bookings with spot preference:
   - `nearest`
@@ -180,7 +194,7 @@ Important:
 | Layer | Technology |
 | --- | --- |
 | Frontend | React 19, Vite, React Router, Axios |
-| Maps and Routing | Leaflet, React Leaflet, OpenStreetMap, OSRM |
+| Maps and Routing | Leaflet, React Leaflet, OpenStreetMap, OSRM, Google Maps JavaScript API, Google Routes API |
 | Realtime | Socket.IO client and server |
 | Backend | Node.js, Express |
 | Database | MongoDB, Mongoose |
@@ -268,11 +282,13 @@ The search experience includes:
 - current-user location
 - nearest parking sorting
 - road-distance and drive-time labels
+- traffic-aware ETA when Google routing is configured
+- alternate route chips like a Google Maps-style comparison bar
 - highlighted selected slot
 - real road-route preview for the focused slot
-- graceful fallback to approximate distance if routing is temporarily unavailable
+- graceful fallback to standard road routing or approximate distance if premium routing is temporarily unavailable
 
-No Google Maps or Mapbox API key is required. The map uses OpenStreetMap tiles and the OSRM routing service by default.
+By default the map uses OpenStreetMap tiles and the OSRM routing service. If Google Maps keys are configured, the search page upgrades to a Google-style route view with traffic-aware ETA and alternate routes.
 
 ### 5. Favorites and Quick Rebook
 
@@ -326,6 +342,7 @@ parkpal/
 |   |   |   |-- authService.js
 |   |   |   |-- bookingService.js
 |   |   |   |-- parkingService.js
+|   |   |   |-- routingService.js
 |   |   |   `-- realtimeService.js
 |   |   |-- utils/
 |   |   |   |-- constants.js
@@ -341,7 +358,8 @@ parkpal/
 |   |   |-- adminController.js
 |   |   |-- authController.js
 |   |   |-- bookingController.js
-|   |   `-- parkingController.js
+|   |   |-- parkingController.js
+|   |   `-- routingController.js
 |   |-- middleware/
 |   |   |-- adminMiddleware.js
 |   |   |-- authMiddleware.js
@@ -356,13 +374,15 @@ parkpal/
 |   |   |-- adminRoutes.js
 |   |   |-- authRoutes.js
 |   |   |-- bookingRoutes.js
-|   |   `-- parkingRoutes.js
+|   |   |-- parkingRoutes.js
+|   |   `-- routingRoutes.js
 |   |-- tests/
 |   |   |-- helpers/
 |   |   `-- platformHardening.test.js
 |   |-- utils/
 |   |   |-- authSession.js
 |   |   |-- bookingLifecycle.js
+|   |   |-- googleRoutes.js
 |   |   |-- httpError.js
 |   |   |-- parkingImageStorage.js
 |   |   |-- parkingSpotHelpers.js
@@ -396,7 +416,7 @@ parkpal/
 - `DashboardPage.jsx`: landing page and role-aware entry
 - `LoginPage.jsx`: sign in
 - `RegisterPage.jsx`: sign up
-- `SearchPage.jsx`: filters, booking form, map, favorites, location tools
+- `SearchPage.jsx`: filters, booking form, route chips, map, favorites, and location tools
 - `MyBookingsPage.jsx`: history, cancellation, saved slots, quick rebook
 - `AdminPage.jsx`: inventory, uploads, validation desk, analytics, admin management
 
@@ -419,6 +439,7 @@ parkpal/
 - `authController.js`: register, login, logout, refresh, current user
 - `bookingController.js`: booking creation, cancellation, and user booking history
 - `parkingController.js`: inventory CRUD, favorites, public search, managed slots
+- `routingController.js`: traffic-aware route matrix and alternate route options
 - `adminController.js`: booking validation, analytics, and admin management
 
 ## Database Model Overview
@@ -512,6 +533,14 @@ Client:
 VITE_API_BASE_URL=http://localhost:5000/api
 VITE_SOCKET_SERVER_URL=http://localhost:5000
 VITE_ROUTING_API_BASE_URL=https://router.project-osrm.org
+VITE_GOOGLE_MAPS_API_KEY=your_browser_restricted_google_maps_key
+VITE_GOOGLE_MAPS_MAP_ID=optional_google_map_id
+```
+
+Optional server routing key:
+
+```env
+GOOGLE_MAPS_API_KEY=your_server_google_maps_key
 ```
 
 Notes:
@@ -521,6 +550,8 @@ Notes:
 - set `UPLOADS_DIRECTORY` to a persistent disk path in production if you do not want uploads stored inside the repo directory
 - if `VITE_SOCKET_SERVER_URL` is not set, the client derives it from `VITE_API_BASE_URL`
 - if `VITE_ROUTING_API_BASE_URL` is not set, the client uses the public OSRM endpoint by default
+- if `VITE_GOOGLE_MAPS_API_KEY` is set, the search page renders the routed map on Google Maps instead of Leaflet
+- if `GOOGLE_MAPS_API_KEY` is set on the server, `/api/routing/*` returns Google traffic-aware ETA and alternate routes
 
 ## Installation
 
@@ -613,6 +644,13 @@ npm --prefix server install
 | `GET` | `/api/bookings/my` | Authenticated | Get the current user's bookings |
 | `PUT` | `/api/bookings/cancel/:id` | Authenticated | Cancel an active owned booking |
 
+### Routing Routes
+
+| Method | Route | Access | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/routing/matrix` | Authenticated | Rank visible parking slots by Google traffic-aware ETA when configured |
+| `POST` | `/api/routing/routes` | Authenticated | Fetch the focused route and alternative route options for the selected slot |
+
 ### Admin Routes
 
 | Method | Route | Access | Purpose |
@@ -665,7 +703,7 @@ npm --prefix server install
 2. Filter by location, price, and optional time window.
 3. Search results and map update together.
 4. Optionally enable browser location.
-5. Sort by nearest parking using road distance when routing is available.
+5. Sort by the fastest route using Google traffic-aware ETA when configured, or standard road distance otherwise.
 6. Select time range and spot preference.
 7. Create a booking.
 8. Review booking state from `My Bookings`.
@@ -761,8 +799,8 @@ Suggested local test sequence:
 
 ## Known Notes
 
-- the map uses OpenStreetMap, so no external maps API key is required
-- road routing uses the configured OSRM endpoint and falls back to approximate distance if the routing service is unavailable
+- without Google keys, the app still works and falls back to OpenStreetMap plus OSRM routing
+- with only `VITE_GOOGLE_MAPS_API_KEY` configured, the map can render on Google Maps but ETA ranking still falls back to non-Google routing until `GOOGLE_MAPS_API_KEY` is set on the server
 - uploaded images are stored on disk unless you point `UPLOADS_DIRECTORY` at a persistent location
 - the map shows route previews and travel estimates, not full turn-by-turn navigation
 - `server/uploads` is intentionally ignored from git

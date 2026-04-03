@@ -19,6 +19,11 @@ import {
   bookingControllerDependencies,
   createBooking,
 } from "../controllers/bookingController.js";
+import {
+  computeTravelMatrix,
+  computeTravelRoutes,
+  routingControllerDependencies,
+} from "../controllers/routingController.js";
 import Booking from "../models/Booking.js";
 import ParkingSlot from "../models/ParkingSlot.js";
 import ParkingSpot from "../models/ParkingSpot.js";
@@ -159,6 +164,104 @@ test("storage config resolves parking uploads inside the configured uploads root
     resolveParkingUploadDirectory(""),
     path.join(resolveUploadsDirectory(""), "parking")
   );
+});
+
+test("computeTravelMatrix returns traffic-aware metrics for mapped slot destinations", async () => {
+  const originalIsGoogleRoutesConfigured =
+    routingControllerDependencies.isGoogleRoutesConfigured;
+  const originalComputeGoogleRouteMatrix =
+    routingControllerDependencies.computeGoogleRouteMatrix;
+
+  routingControllerDependencies.isGoogleRoutesConfigured = () => true;
+  routingControllerDependencies.computeGoogleRouteMatrix = async () => [
+    {
+      condition: "ROUTE_EXISTS",
+      destinationIndex: 0,
+      distanceMeters: 19320,
+      durationSeconds: 1860,
+    },
+    {
+      condition: "ROUTE_EXISTS",
+      destinationIndex: 1,
+      distanceMeters: 16700,
+      durationSeconds: 1920,
+    },
+  ];
+
+  try {
+    const req = {
+      body: {
+        destinations: [
+          { slotId: "slot-1", lat: 16.31, lng: 80.43 },
+          { slotId: "slot-2", lat: 16.32, lng: 80.44 },
+        ],
+        origin: { lat: 16.28, lng: 80.48 },
+      },
+    };
+    const res = createMockResponse();
+
+    await computeTravelMatrix(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.provider, "google");
+    assert.equal(res.body.metricsBySlotId["slot-1"].durationMinutes, 31);
+    assert.equal(res.body.metricsBySlotId["slot-2"].distanceKm, 16.7);
+  } finally {
+    routingControllerDependencies.isGoogleRoutesConfigured =
+      originalIsGoogleRoutesConfigured;
+    routingControllerDependencies.computeGoogleRouteMatrix =
+      originalComputeGoogleRouteMatrix;
+  }
+});
+
+test("computeTravelRoutes returns alternative Google-style route options", async () => {
+  const originalIsGoogleRoutesConfigured =
+    routingControllerDependencies.isGoogleRoutesConfigured;
+  const originalComputeGoogleRoutes =
+    routingControllerDependencies.computeGoogleRoutes;
+
+  routingControllerDependencies.isGoogleRoutesConfigured = () => true;
+  routingControllerDependencies.computeGoogleRoutes = async () => [
+    {
+      distanceKm: 19.3,
+      durationMinutes: 31,
+      encodedPolyline: "abcd",
+      id: "google-route-1",
+      label: "Best ETA",
+      routeLabels: ["DEFAULT_ROUTE"],
+    },
+    {
+      distanceKm: 16.7,
+      durationMinutes: 32,
+      encodedPolyline: "wxyz",
+      id: "google-route-2",
+      label: "Alt 2",
+      routeLabels: ["DEFAULT_ROUTE_ALTERNATE"],
+    },
+  ];
+
+  try {
+    const req = {
+      body: {
+        destination: { lat: 16.31, lng: 80.43 },
+        origin: { lat: 16.28, lng: 80.48 },
+      },
+    };
+    const res = createMockResponse();
+
+    await computeTravelRoutes(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.provider, "google");
+    assert.equal(res.body.routes.length, 2);
+    assert.equal(res.body.routes[0].label, "Best ETA");
+    assert.equal(res.body.routes[1].durationMinutes, 32);
+  } finally {
+    routingControllerDependencies.isGoogleRoutesConfigured =
+      originalIsGoogleRoutesConfigured;
+    routingControllerDependencies.computeGoogleRoutes =
+      originalComputeGoogleRoutes;
+  }
 });
 
 test("createBooking rejects a request when all matching spots are unavailable", async () => {

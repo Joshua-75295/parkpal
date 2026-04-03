@@ -22,6 +22,11 @@ import {
   sortSlotsByDistance,
 } from "../services/parkingService.js";
 import {
+  fetchGoogleAlternativeRoutes,
+  fetchGoogleTravelMetricsForSlots,
+  isGoogleMapsConfigured,
+} from "../services/routingService.js";
+import {
   REALTIME_EVENTS,
   subscribeToRealtimeEvent,
 } from "../services/realtimeService.js";
@@ -178,6 +183,7 @@ const resultsCountStyle = {
 function SearchPage() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
+  const supportsGoogleMaps = isGoogleMapsConfigured();
   const [filters, setFilters] = useState(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState(initialFilters);
   const [slots, setSlots] = useState([]);
@@ -188,9 +194,10 @@ function SearchPage() {
   const [isRouting, setIsRouting] = useState(false);
   const [activeBookingId, setActiveBookingId] = useState("");
   const [activeFavoriteId, setActiveFavoriteId] = useState("");
+  const [activeRouteId, setActiveRouteId] = useState("");
   const [roadMetricsBySlotId, setRoadMetricsBySlotId] = useState({});
+  const [routeOptions, setRouteOptions] = useState([]);
   const [selectedSlotId, setSelectedSlotId] = useState("");
-  const [selectedRoute, setSelectedRoute] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isNearestMode, setIsNearestMode] = useState(false);
@@ -199,6 +206,13 @@ function SearchPage() {
 
   const hasRoadDistances = useMemo(
     () => Object.keys(roadMetricsBySlotId).length > 0,
+    [roadMetricsBySlotId]
+  );
+  const hasTrafficAwareMetrics = useMemo(
+    () =>
+      Object.values(roadMetricsBySlotId).some(
+        (metric) => metric?.trafficAware === true
+      ),
     [roadMetricsBySlotId]
   );
 
@@ -263,10 +277,19 @@ function SearchPage() {
         return {};
       }
 
-      try {
+      const loadOsrmFallbackMetrics = async () => {
         const nextRoadMetrics = await fetchRoadMetricsForSlots(slots, location, {
           signal,
         });
+
+        setRoadMetricsBySlotId(nextRoadMetrics);
+        return nextRoadMetrics;
+      };
+
+      try {
+        const nextRoadMetrics = supportsGoogleMaps
+          ? await fetchGoogleTravelMetricsForSlots(slots, location, { signal })
+          : await loadOsrmFallbackMetrics();
 
         setRoadMetricsBySlotId(nextRoadMetrics);
         return nextRoadMetrics;
@@ -275,15 +298,38 @@ function SearchPage() {
           throw requestError;
         }
 
+        if (supportsGoogleMaps) {
+          try {
+            const fallbackMetrics = await loadOsrmFallbackMetrics();
+
+            if (showFallbackToast) {
+              setToast((currentToast) =>
+                currentToast ?? {
+                  type: "info",
+                  title: "Google traffic ETA unavailable",
+                  message:
+                    "Using standard road routing for now. Add a Google Routes API key on the server for traffic-aware ETA and alternate routes.",
+                }
+              );
+            }
+
+            return fallbackMetrics;
+          } catch (fallbackError) {
+            if (fallbackError?.name === "AbortError") {
+              throw fallbackError;
+            }
+          }
+        }
+
         setRoadMetricsBySlotId({});
 
         if (showFallbackToast) {
           setToast((currentToast) =>
             currentToast ?? {
               type: "info",
-              title: "Road routing unavailable",
+              title: "Routing unavailable",
               message:
-                "Using approximate straight-line distance until road routing is available again.",
+                "Using approximate straight-line distance until route data is available again.",
             }
           );
         }
@@ -291,7 +337,7 @@ function SearchPage() {
         return {};
       }
     },
-    [slots]
+    [slots, supportsGoogleMaps]
   );
 
   useEffect(() => {
@@ -349,10 +395,10 @@ function SearchPage() {
       })),
     [displaySlots, favoriteParkingSlotIdSet]
   );
-
   useEffect(() => {
     if (!userLocation) {
-      setSelectedRoute(null);
+      setRouteOptions([]);
+      setActiveRouteId("");
       setIsRouting(false);
       return;
     }
@@ -360,7 +406,8 @@ function SearchPage() {
     const selectedSlot = displaySlots.find((slot) => slot._id === selectedSlotId);
 
     if (!selectedSlot || !hasSlotCoordinates(selectedSlot)) {
-      setSelectedRoute(null);
+      setRouteOptions([]);
+      setActiveRouteId("");
       setIsRouting(false);
       return;
     }
@@ -369,18 +416,75 @@ function SearchPage() {
 
     setIsRouting(true);
 
-    fetchDrivingRoute(userLocation, selectedSlot.location, {
-      signal: abortController.signal,
-    })
-      .then((route) => {
-        setSelectedRoute(route);
-      })
+    const loadRouteOptions = async () => {
+      try {
+        const nextRoutes = supportsGoogleMaps
+          ? await fetchGoogleAlternativeRoutes(userLocation, selectedSlot.location, {
+              signal: abortController.signal,
+            })
+          : [];
+
+        if (nextRoutes.length) {
+          setRouteOptions(nextRoutes);
+          setActiveRouteId((currentRouteId) =>
+            nextRoutes.some((route) => route.id === currentRouteId)
+              ? currentRouteId
+              : nextRoutes[0].id
+          );
+          return;
+        }
+
+        const fallbackRoute = await fetchDrivingRoute(userLocation, selectedSlot.location, {
+          signal: abortController.signal,
+        });
+
+        if (!fallbackRoute) {
+          setRouteOptions([]);
+          setActiveRouteId("");
+          return;
+        }
+
+        const nextFallbackRoutes = [
+          {
+            ...fallbackRoute,
+            id: "fallback-route-1",
+            label: supportsGoogleMaps ? "Road fallback" : "Road route",
+            provider: supportsGoogleMaps ? "osrm" : "leaflet",
+            trafficAware: false,
+          },
+        ];
+
+        setRouteOptions(nextFallbackRoutes);
+        setActiveRouteId(nextFallbackRoutes[0].id);
+      } catch (requestError) {
+        if (requestError?.name === "AbortError") {
+          return;
+        }
+
+        setRouteOptions([]);
+        setActiveRouteId("");
+
+        if (supportsGoogleMaps) {
+          setToast((currentToast) =>
+            currentToast ?? {
+              type: "info",
+              title: "Route alternatives unavailable",
+              message:
+                "Google route options could not be loaded, so the map is falling back to the basic route preview.",
+            }
+          );
+        }
+      }
+    };
+
+    loadRouteOptions()
       .catch((requestError) => {
         if (requestError?.name === "AbortError") {
           return;
         }
 
-        setSelectedRoute(null);
+        setRouteOptions([]);
+        setActiveRouteId("");
       })
       .finally(() => {
         if (!abortController.signal.aborted) {
@@ -391,7 +495,7 @@ function SearchPage() {
     return () => {
       abortController.abort();
     };
-  }, [displaySlots, selectedSlotId, userLocation]);
+  }, [displaySlots, selectedSlotId, supportsGoogleMaps, userLocation]);
 
   useEffect(() => {
     const unsubscribeInventory = subscribeToRealtimeEvent(
@@ -631,7 +735,9 @@ function SearchPage() {
       type: "success",
       title: "Location ready",
       message:
-        "Road distance estimates are now live. You can sort results by the nearest parking slot.",
+        supportsGoogleMaps
+          ? "Traffic-aware ETA is now live. You can sort results by the fastest parking slot."
+          : "Road distance estimates are now live. You can sort results by the nearest parking slot.",
     });
   };
 
@@ -670,6 +776,8 @@ function SearchPage() {
   const handleClearLocationTools = () => {
     setUserLocation(null);
     setIsNearestMode(false);
+    setRouteOptions([]);
+    setActiveRouteId("");
   };
 
   const handleToggleFavorite = async (slotId) => {
@@ -782,8 +890,8 @@ function SearchPage() {
         <h1 style={{ margin: 0, color: "#102a43" }}>Search Parking Slots</h1>
         <p style={{ margin: 0, color: "#486581", lineHeight: 1.7 }}>
           Filter by location, price, and optionally a live time range. Turn on
-          your location to sort by the nearest mapped parking slot and preview a
-          route line on the map.
+          your location to sort by the best route and compare live ETA options
+          on the map.
         </p>
       </div>
 
@@ -817,14 +925,26 @@ function SearchPage() {
             <strong
               style={{ display: "block", marginBottom: "6px", color: "#486581" }}
             >
-              {hasRoadDistances ? "Closest by road" : "Closest mapped"}
+              {hasTrafficAwareMetrics
+                ? "Fastest ETA"
+                : hasRoadDistances
+                  ? "Closest by road"
+                : "Closest mapped"}
             </strong>
             <span style={{ fontSize: "1.35rem", fontWeight: 800, color: "#102a43" }}>
-              {summary.closestDistance || "Not available"}
+              {hasTrafficAwareMetrics
+                ? summary.closestDuration || summary.closestDistance || "Not available"
+                : summary.closestDistance || "Not available"}
             </span>
             <p style={{ margin: "8px 0 0", color: "#486581" }}>
               {summary.closestTitle || "No map-ready slots in these results yet."}
-              {summary.closestDuration ? ` · ${summary.closestDuration}` : ""}
+              {hasTrafficAwareMetrics
+                ? summary.closestDistance
+                  ? ` | ${summary.closestDistance}`
+                  : ""
+                : summary.closestDuration
+                  ? ` | ${summary.closestDuration}`
+                  : ""}
             </p>
           </article>
         ) : null}
@@ -954,10 +1074,14 @@ function SearchPage() {
           <p style={statusTextStyle}>
             {userLocation
               ? isNearestMode
-                ? "Nearest-first sorting is active and the map follows the focused driving route."
-                : hasRoadDistances
-                  ? "Road distance estimates are live. Turn on nearest parking to sort the list by real driving distance."
-                  : "Approximate distance estimates are live while road routing is loading."
+                ? supportsGoogleMaps
+                  ? "Fastest-route sorting is active and the map follows the focused Google-style route."
+                  : "Nearest-first sorting is active and the map follows the focused driving route."
+                : hasTrafficAwareMetrics
+                  ? "Traffic-aware ETA is live. Turn on nearest parking to sort by the fastest route."
+                  : hasRoadDistances
+                    ? "Road distance estimates are live. Turn on nearest parking to sort the list by real driving distance."
+                    : "Approximate distance estimates are live while route data is loading."
               : "Enable location to see how far each slot is from you and jump to the closest mapped option."}
           </p>
         </div>
@@ -985,13 +1109,20 @@ function SearchPage() {
         </div>
 
         <ParkingMap
+          activeRouteId={activeRouteId}
           emptyLabel="These results do not include map coordinates yet, so the card grid is doing the heavy lifting."
           isRouting={isRouting}
+          onRouteSelect={setActiveRouteId}
           onSelect={setSelectedSlotId}
-          routeDetails={selectedRoute}
+          routeOptions={routeOptions}
+          routingProvider={supportsGoogleMaps ? "google" : "leaflet"}
           selectedSlotId={selectedSlotId}
           slots={displaySlots}
-          subtitle="Tap a marker to focus a slot, then compare the compact cards below."
+          subtitle={
+            supportsGoogleMaps
+              ? "Tap a marker to focus a slot, then compare the live ETA route options below."
+              : "Tap a marker to focus a slot, then compare the compact cards below."
+          }
           title="Live Parking Map"
           userLocation={userLocation}
         />
