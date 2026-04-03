@@ -13,11 +13,11 @@ import {
 import { getApiErrorMessage } from "../services/api.js";
 import {
   createParkingSlot,
+  getParkingPreviewImageUrl,
   deleteParkingSlot,
   getLocationText,
   getManagedParkingSlots,
   readImageFileAsDataUrl,
-  resolveParkingImageUrl,
   updateParkingSlot,
 } from "../services/parkingService.js";
 import {
@@ -552,8 +552,34 @@ function AdminPage() {
   );
 
   const parkingFormImagePreviewUrl = useMemo(
-    () => resolveParkingImageUrl(parkingForm.imageData || parkingForm.imageUrl),
-    [parkingForm.imageData, parkingForm.imageUrl]
+    () =>
+      getParkingPreviewImageUrl({
+        title: parkingForm.title,
+        imageUrl: parkingForm.imageData || parkingForm.imageUrl,
+        location: {
+          address: parkingForm.address,
+          lat: parkingForm.lat,
+          lng: parkingForm.lng,
+        },
+        pricePerHour: parkingForm.pricePerHour,
+        availableSlots: parkingForm.availableSlots,
+        allocationConfig: {
+          accessibleSpotCount: parkingForm.accessibleSpotCount,
+          vipSpotCount: parkingForm.vipSpotCount,
+        },
+      }),
+    [
+      parkingForm.accessibleSpotCount,
+      parkingForm.address,
+      parkingForm.availableSlots,
+      parkingForm.imageData,
+      parkingForm.imageUrl,
+      parkingForm.lat,
+      parkingForm.lng,
+      parkingForm.pricePerHour,
+      parkingForm.title,
+      parkingForm.vipSpotCount,
+    ]
   );
 
   const revenueBarMaximum = useMemo(
@@ -1085,28 +1111,11 @@ function AdminPage() {
                     gridColumn: "1 / -1",
                   }}
                 >
-                  {parkingFormImagePreviewUrl ? (
-                    <img
-                      alt={parkingForm.title || "Parking slot preview"}
-                      src={parkingFormImagePreviewUrl}
-                      style={styles.media}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        ...styles.media,
-                        display: "grid",
-                        placeItems: "center",
-                        color: "#486581",
-                        fontWeight: 700,
-                        fontSize: "0.85rem",
-                        textAlign: "center",
-                        padding: "10px",
-                      }}
-                    >
-                      Upload a real slot photo
-                    </div>
-                  )}
+                  <img
+                    alt={parkingForm.title || "Parking slot preview"}
+                    src={parkingFormImagePreviewUrl}
+                    style={styles.media}
+                  />
                   <div style={{ flex: "1 1 240px", display: "grid", gap: "10px" }}>
                     <label style={styles.label}>
                       Upload image
@@ -1473,28 +1482,11 @@ function AdminPage() {
                         flexWrap: "wrap",
                       }}
                     >
-                      {slot.imageUrl ? (
-                        <img
-                          alt={slot.title}
-                          src={resolveParkingImageUrl(slot.imageUrl)}
-                          style={styles.media}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            ...styles.media,
-                            display: "grid",
-                            placeItems: "center",
-                            color: "#486581",
-                            fontWeight: 700,
-                            fontSize: "0.85rem",
-                            textAlign: "center",
-                            padding: "10px",
-                          }}
-                        >
-                          Add a slot image
-                        </div>
-                      )}
+                      <img
+                        alt={slot.title}
+                        src={getParkingPreviewImageUrl(slot)}
+                        style={styles.media}
+                      />
                       <div style={{ flex: "1 1 240px" }}>
                         <div style={styles.badgeRow}>
                           <span style={getBadgeStyle(getParkingTone(slot.status))}>

@@ -29,14 +29,35 @@ const ADMIN_PASSWORD = "Mall@123";
 const USER_PASSWORD = "User@123";
 const SUPER_ADMIN_PASSWORD = "SuperAdmin@123";
 const MS_PER_MINUTE = 60 * 1000;
-const DEMO_PARKING_IMAGE_URLS = [
-  "https://upload.wikimedia.org/wikipedia/commons/7/75/Parking_Garage.jpg",
-  "https://upload.wikimedia.org/wikipedia/commons/6/61/Parking_lot_20220501_234627.jpg",
-  "https://upload.wikimedia.org/wikipedia/commons/7/7b/Parking_lot.JPG",
-  "https://upload.wikimedia.org/wikipedia/commons/c/c5/Multistorey_car_park.jpg",
-  "https://upload.wikimedia.org/wikipedia/commons/7/7d/Underground_parking.jpg",
-  "https://upload.wikimedia.org/wikipedia/commons/0/02/Underground_parking_2.jpg",
-  "https://upload.wikimedia.org/wikipedia/commons/1/1d/Underground_parking_entrance_%2842888040441%29.jpg",
+const DEMO_PARKING_PREVIEW_PALETTES = [
+  {
+    backgroundStart: "#dff4ff",
+    backgroundEnd: "#f2fce2",
+    accent: "#0f766e",
+    accentSoft: "#99f6e4",
+    ink: "#102a43",
+  },
+  {
+    backgroundStart: "#fef3c7",
+    backgroundEnd: "#fee2e2",
+    accent: "#b45309",
+    accentSoft: "#fcd34d",
+    ink: "#78350f",
+  },
+  {
+    backgroundStart: "#e0f2fe",
+    backgroundEnd: "#ede9fe",
+    accent: "#1d4ed8",
+    accentSoft: "#93c5fd",
+    ink: "#1e3a8a",
+  },
+  {
+    backgroundStart: "#dcfce7",
+    backgroundEnd: "#e0f2fe",
+    accent: "#166534",
+    accentSoft: "#86efac",
+    ink: "#14532d",
+  },
 ];
 
 const hasFlag = (flag) => process.argv.slice(2).includes(flag);
@@ -44,6 +65,102 @@ const hasFlag = (flag) => process.argv.slice(2).includes(flag);
 const shouldForceBookings = hasFlag("--force-bookings");
 const shouldSkipBookings = hasFlag("--no-bookings");
 const shouldShowHelp = hasFlag("--help");
+
+const escapeSvgText = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+
+const truncatePreviewText = (value, maxLength = 34) => {
+  const normalizedValue = String(value ?? "").trim();
+
+  if (normalizedValue.length <= maxLength) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, Math.max(maxLength - 1, 0)).trimEnd()}…`;
+};
+
+const hashPreviewSeed = (value) =>
+  Array.from(String(value ?? "")).reduce(
+    (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
+    0
+  );
+
+const buildSpotSummary = (slotSeed = {}) => {
+  const totalSpots = Number(slotSeed.availableSlots ?? 0);
+  const vipSpots = Number(slotSeed.allocationConfig?.vipSpotCount ?? 0) || 0;
+  const accessibleSpots =
+    Number(slotSeed.allocationConfig?.accessibleSpotCount ?? 0) || 0;
+  const standardSpots = Math.max(totalSpots - vipSpots - accessibleSpots, 0);
+  const summaryParts = [];
+
+  if (standardSpots > 0) {
+    summaryParts.push(`${standardSpots} standard`);
+  }
+
+  if (vipSpots > 0) {
+    summaryParts.push(`${vipSpots} VIP`);
+  }
+
+  if (accessibleSpots > 0) {
+    summaryParts.push(`${accessibleSpots} accessible`);
+  }
+
+  if (summaryParts.length === 0 && totalSpots > 0) {
+    summaryParts.push(`${totalSpots} total spots`);
+  }
+
+  return summaryParts.join(" • ");
+};
+
+const buildDemoParkingPreviewDataUri = (slotSeed = {}) => {
+  const seed = slotSeed.title || slotSeed.address || "ParkPal";
+  const palette =
+    DEMO_PARKING_PREVIEW_PALETTES[
+      hashPreviewSeed(seed) % DEMO_PARKING_PREVIEW_PALETTES.length
+    ];
+  const title = truncatePreviewText(slotSeed.title || "Parking Slot", 30);
+  const subtitle = truncatePreviewText(slotSeed.address || "Smart parking", 44);
+  const topLabel =
+    Number(slotSeed.pricePerHour) > 0
+      ? `Rs. ${slotSeed.pricePerHour}/hour`
+      : "ParkPal";
+  const summary = truncatePreviewText(
+    buildSpotSummary(slotSeed) || "Ready for parking",
+    42
+  );
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-label="${escapeSvgText(title)}">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${palette.backgroundStart}" />
+          <stop offset="100%" stop-color="${palette.backgroundEnd}" />
+        </linearGradient>
+      </defs>
+      <rect width="1200" height="700" rx="44" fill="url(#bg)" />
+      <circle cx="1030" cy="96" r="110" fill="${palette.accentSoft}" opacity="0.45" />
+      <circle cx="110" cy="580" r="130" fill="${palette.accentSoft}" opacity="0.3" />
+      <rect x="72" y="72" width="1056" height="556" rx="36" fill="#ffffff" opacity="0.62" />
+      <rect x="112" y="132" width="270" height="344" rx="32" fill="${palette.accent}" />
+      <text x="247" y="330" fill="#ffffff" font-size="180" font-family="Georgia, serif" text-anchor="middle" font-weight="700">P</text>
+      <path d="M474 470h562" stroke="#ffffff" stroke-width="18" stroke-linecap="round" opacity="0.85" />
+      <path d="M474 510h562" stroke="#ffffff" stroke-width="18" stroke-linecap="round" opacity="0.55" />
+      <path d="M474 550h562" stroke="#ffffff" stroke-width="18" stroke-linecap="round" opacity="0.35" />
+      <text x="474" y="190" fill="${palette.ink}" font-size="38" font-family="Arial, sans-serif" font-weight="700">${escapeSvgText(topLabel)}</text>
+      <text x="474" y="278" fill="${palette.ink}" font-size="72" font-family="Georgia, serif" font-weight="700">${escapeSvgText(title)}</text>
+      <text x="474" y="344" fill="${palette.ink}" font-size="34" font-family="Arial, sans-serif">${escapeSvgText(subtitle)}</text>
+      <text x="474" y="402" fill="${palette.ink}" font-size="28" font-family="Arial, sans-serif">${escapeSvgText(summary)}</text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+    svg.replace(/\s{2,}/g, " ").trim()
+  )}`;
+};
 
 const superAdminSeed = {
   name: "ParkPal Super Admin",
@@ -239,7 +356,7 @@ const mallAdminSeeds = [
     ...mallAdminSeed.slot,
     imageUrl:
       mallAdminSeed.slot.imageUrl ??
-      DEMO_PARKING_IMAGE_URLS[index % DEMO_PARKING_IMAGE_URLS.length],
+      buildDemoParkingPreviewDataUri(mallAdminSeed.slot),
   },
 }));
 

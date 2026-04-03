@@ -1,7 +1,7 @@
 import BookingForm from "./BookingForm.jsx";
 import {
   formatDistanceAway,
-  resolveParkingImageUrl,
+  getParkingPreviewImageUrl,
 } from "../services/parkingService.js";
 import { PARKING_SPOT_TYPE_LABELS } from "../utils/constants.js";
 
@@ -145,25 +145,11 @@ function ParkingSlotCard({
           : cardStyle.boxShadow,
       }}
     >
-      {slot.imageUrl ? (
-        <img
-          alt={slot.title}
-          src={resolveParkingImageUrl(slot.imageUrl)}
-          style={mediaStyle}
-        />
-      ) : (
-        <div
-          style={{
-            ...mediaStyle,
-            display: "grid",
-            placeItems: "center",
-            color: "#486581",
-            fontWeight: 700,
-          }}
-        >
-          Parking preview coming soon
-        </div>
-      )}
+      <img
+        alt={slot.title}
+        src={getParkingPreviewImageUrl(slot)}
+        style={mediaStyle}
+      />
 
       <div style={topRowStyle}>
         <div>
